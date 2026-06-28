@@ -41,8 +41,66 @@ private:
     std::string m_name;
 };
 
+/**
+ * @brief Test receiver class for verifying signal disconnection.
+ */
+class DisconnectTestReceiver : public GObject {
+public:
+    /**
+     * @brief Constructs a new DisconnectTestReceiver.
+     */
+    DisconnectTestReceiver() : m_called(false) {}
+
+    /**
+     * @brief Slot called when the signal is emitted.
+     */
+    void onSignal() {
+        m_called = true;
+    }
+
+    /**
+     * @brief Checks if the slot was called.
+     * @return True if called, false otherwise.
+     */
+    bool wasCalled() const {
+        return m_called;
+    }
+
+private:
+    bool m_called;
+};
+
 int main(int argc, char** argv) {
     std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
+
+    // Test manual disconnect
+    {
+        DisconnectTestReceiver testReceiver;
+        GSignal<> testSignal;
+        G::ConnectionHandle handle = GObject::connect(testSignal, &testReceiver, &DisconnectTestReceiver::onSignal);
+
+        std::cout << "Emitting testSignal before disconnect..." << std::endl;
+        testSignal.emit();
+        if (!testReceiver.wasCalled()) {
+            std::cerr << "FAIL: slot not called before disconnect" << std::endl;
+            return 1;
+        }
+
+        std::cout << "Disconnecting testSignal..." << std::endl;
+        testSignal.disconnect(handle);
+
+        DisconnectTestReceiver testReceiver2;
+        G::ConnectionHandle handle2 = GObject::connect(testSignal, &testReceiver2, &DisconnectTestReceiver::onSignal);
+        testSignal.disconnect(handle2);
+
+        std::cout << "Emitting testSignal after disconnect..." << std::endl;
+        testSignal.emit();
+        if (testReceiver2.wasCalled()) {
+            std::cerr << "FAIL: slot called after disconnect" << std::endl;
+            return 1;
+        }
+        std::cout << "SUCCESS: disconnect test passed!" << std::endl;
+    }
 
     GCoreApplication app(argc, argv);
 

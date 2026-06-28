@@ -54,12 +54,14 @@ public:
      * @param receiver The object receiving the signal.
      * @param slot The member function to call when the signal is emitted.
      * @param type The type of connection.
+     * @return A handle representing the connection.
      */
     template <typename Signal, typename Receiver, typename Slot>
-    static void connect(Signal& signal, Receiver* receiver, Slot slot, G::ConnectionType type = G::AutoConnection) {
+    static G::ConnectionHandle connect(Signal& signal, Receiver* receiver, Slot slot, G::ConnectionType type = G::AutoConnection) {
         if (receiver) {
-            signal.connect(receiver, slot, type);
+            return signal.connect(receiver, slot, type);
         }
+        return {};
     }
 
 private:

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 namespace G {
     /**
      * @brief Specifies the type of a signal-slot connection.
@@ -26,5 +28,40 @@ namespace G {
          * The slot is executed in the receiver's thread.
          */
         QueuedConnection
+    };
+
+    /**
+     * @brief A handle representing a signal-slot connection.
+     */
+    struct ConnectionHandle {
+        /**
+         * @brief The unique ID of the connection.
+         */
+        int id = -1;
+
+        /**
+         * @brief Weak pointer to the signal's shared state.
+         */
+        std::weak_ptr<void> signalState;
+
+        /**
+         * @brief Checks if the handle is valid.
+         * @return True if valid, false otherwise.
+         */
+        bool isValid() const { return id != -1 && !signalState.expired(); }
+
+        /**
+         * @brief Equality operator.
+         * @param other The other handle to compare to.
+         * @return True if equal, false otherwise.
+         */
+        bool operator==(const ConnectionHandle& other) const { return id == other.id; }
+
+        /**
+         * @brief Inequality operator.
+         * @param other The other handle to compare to.
+         * @return True if not equal, false otherwise.
+         */
+        bool operator!=(const ConnectionHandle& other) const { return id != other.id; }
     };
 }

@@ -54,10 +54,11 @@ public:
      * @param receiver The object that will receive the signal.
      * @param slotFunc The member function to call when the signal is emitted.
      * @param type The type of connection to establish.
+     * @return A handle representing the connection.
      */
     template <typename Receiver>
-    void connect(Receiver* receiver, void (Receiver::*slotFunc)(Args...), G::ConnectionType type = G::AutoConnection) {
-        if (!receiver) return;
+    G::ConnectionHandle connect(Receiver* receiver, void (Receiver::*slotFunc)(Args...), G::ConnectionType type = G::AutoConnection) {
+        if (!receiver) return {};
 
         int id;
         std::shared_ptr<State> state = m_state;
@@ -83,6 +84,25 @@ public:
                 }
             }
         });
+
+        return {id, state};
+    }
+
+    /**
+     * @brief Disconnects a signal-slot connection using the provided handle.
+     * @param handle The handle representing the connection to remove.
+     */
+    void disconnect(const G::ConnectionHandle& handle) {
+        if (!handle.isValid()) return;
+
+        if (handle.signalState.lock() != m_state) return;
+
+        std::lock_guard<std::mutex> lock(m_state->mutex);
+        auto it = std::remove_if(m_state->connections.begin(), m_state->connections.end(),
+            [&handle](const Connection& c) { return c.id == handle.id; });
+        if (it != m_state->connections.end()) {
+            m_state->connections.erase(it, m_state->connections.end());
+        }
     }
 
     /**
