@@ -1,0 +1,17 @@
+# Build directories
+build/
+bin/
+obj/
+out/
+
+# IDE files
+.vs/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.filters
+
+# Operating system files
+Thumbs.db
+Desktop.ini
