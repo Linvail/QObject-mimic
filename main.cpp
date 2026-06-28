@@ -1,5 +1,6 @@
 #include <iostream>
 #include <chrono>
+#include <boost/signals2.hpp>
 #include "GCoreApplication.h"
 #include "GThread.h"
 #include "GObject.h"
@@ -72,6 +73,16 @@ private:
 
 int main(int argc, char** argv) {
     std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
+
+    // Test Boost.Signals2 compilation and execution
+    {
+        std::cout << "Testing Boost.Signals2 compilation..." << std::endl;
+        boost::signals2::signal<void()> sig;
+        sig.connect([]() {
+            std::cout << "  Boost.Signals2 slot invoked successfully!" << std::endl;
+        });
+        sig();
+    }
 
     // Test manual disconnect
     {

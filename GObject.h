@@ -65,6 +65,7 @@ public:
     }
 
 private:
+    std::shared_ptr<int> m_life;
     GThread* m_thread;
     GObject* m_parent;
     std::vector<std::function<void()>> m_cleanupCallbacks;

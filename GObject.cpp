@@ -3,7 +3,7 @@
 #include "GEvent.h"
 #include "GAbstractEventDispatcher.h"
 
-GObject::GObject(GObject* parent) : m_parent(parent) {
+GObject::GObject(GObject* parent) : m_life(std::make_shared<int>(0)), m_parent(parent) {
     m_thread = GThread::currentThread();
 }
 
@@ -21,6 +21,8 @@ GObject::~GObject() {
             dispatcher->removeEventsForReceiver(this);
         }
     }
+
+    m_life.reset();
 }
 
 GThread* GObject::thread() const {
