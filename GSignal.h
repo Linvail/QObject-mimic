@@ -3,53 +3,25 @@
 #include "GGlobal.h"
 #include "GEvent.h"
 #include "GCoreApplication.h"
-#include <vector>
-#include <functional>
-#include <mutex>
+#include "GObject.h"
+#include "GThread.h"
+#include <boost/signals2.hpp>
 #include <memory>
-#include <algorithm>
 
 /**
- * @brief A template class representing a signal that can be emitted to trigger connected slots.
- * @tparam Args The types of arguments the signal passes to its connected slots.
+ * @brief A signal class wrapping boost::signals2::signal that supports thread-safe connections and lifetime tracking.
+ * @tparam Args The argument types passed by the signal.
  */
 template <typename... Args>
-class GSignal {
+class GSignal : public boost::signals2::signal<void(Args...)> {
 public:
     /**
-     * @brief Internal structure representing a connection to a receiver.
+     * @brief Constructs a new GSignal.
      */
-    struct Connection {
-        int id;
-        GObject* receiver;
-        std::function<void(Args...)> slot;
-        G::ConnectionType type;
-    };
+    GSignal() = default;
 
     /**
-     * @brief Shared state of the signal to ensure thread-safe destruction and disconnection.
-     */
-    struct State {
-        std::vector<Connection> connections;
-        std::mutex mutex;
-        int nextId = 0;
-    };
-
-    /**
-     * @brief Constructs a new signal.
-     */
-    GSignal() : m_state(std::make_shared<State>()) {}
-
-    /**
-     * @brief Destroys the signal, safely clearing all connections.
-     */
-    ~GSignal() {
-        std::lock_guard<std::mutex> lock(m_state->mutex);
-        m_state->connections.clear();
-    }
-
-    /**
-     * @brief Connects this signal to a member function of a receiver object.
+     * @brief Connects this signal to a member function of a receiver object with lifetime and thread checks.
      * @tparam Receiver The type of the receiver object.
      * @param receiver The object that will receive the signal.
      * @param slotFunc The member function to call when the signal is emitted.
@@ -57,80 +29,24 @@ public:
      * @return A handle representing the connection.
      */
     template <typename Receiver>
-    G::ConnectionHandle connect(Receiver* receiver, void (Receiver::*slotFunc)(Args...), G::ConnectionType type = G::AutoConnection) {
-        if (!receiver) return {};
-
-        int id;
-        std::shared_ptr<State> state = m_state;
-
-        auto slotLambda = [receiver, slotFunc](Args... args) {
-            (receiver->*slotFunc)(args...);
-        };
-
-        {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            id = state->nextId++;
-            state->connections.push_back({id, receiver, slotLambda, type});
+    boost::signals2::connection connect(Receiver* receiver, void (Receiver::*slotFunc)(Args...), G::ConnectionType type = G::AutoConnection) {
+        if (!receiver) {
+            return {};
         }
 
-        std::weak_ptr<State> weakState = state;
-        receiver->addCleanupCallback([weakState, id]() {
-            if (auto s = weakState.lock()) {
-                std::lock_guard<std::mutex> stateLock(s->mutex);
-                auto it = std::remove_if(s->connections.begin(), s->connections.end(),
-                    [id](const Connection& c) { return c.id == id; });
-                if (it != s->connections.end()) {
-                    s->connections.erase(it, s->connections.end());
-                }
+        std::weak_ptr<int> weakLife = receiver->objectLife();
+        GThread* receiverThread = receiver->thread();
+
+        auto wrapper = [weakLife, receiver, slotFunc, receiverThread, type](Args... args) {
+            // Check if receiver is still alive
+            auto life = weakLife.lock();
+            if (!life) {
+                return;
             }
-        });
 
-        return {id, state};
-    }
-
-    /**
-     * @brief Disconnects a signal-slot connection using the provided handle.
-     * @param handle The handle representing the connection to remove.
-     */
-    void disconnect(const G::ConnectionHandle& handle) {
-        if (!handle.isValid()) return;
-
-        if (handle.signalState.lock() != m_state) return;
-
-        std::lock_guard<std::mutex> lock(m_state->mutex);
-        auto it = std::remove_if(m_state->connections.begin(), m_state->connections.end(),
-            [&handle](const Connection& c) { return c.id == handle.id; });
-        if (it != m_state->connections.end()) {
-            m_state->connections.erase(it, m_state->connections.end());
-        }
-    }
-
-    /**
-     * @brief Emits the signal by calling the function call operator.
-     * @param args The arguments to pass to the connected slots.
-     */
-    void operator()(Args... args) {
-        emit(args...);
-    }
-
-    /**
-     * @brief Emits the signal, invoking all connected slots with the provided arguments.
-     * @param args The arguments to pass to the connected slots.
-     */
-    void emit(Args... args) {
-        std::vector<Connection> connectionsCopy;
-        {
-            std::lock_guard<std::mutex> lock(m_state->mutex);
-            connectionsCopy = m_state->connections;
-        }
-
-        for (const auto& conn : connectionsCopy) {
-            G::ConnectionType activeType = conn.type;
-
+            G::ConnectionType activeType = type;
             if (activeType == G::AutoConnection) {
                 GThread* currentThread = GThread::currentThread();
-                GThread* receiverThread = conn.receiver ? conn.receiver->thread() : nullptr;
-
                 if (currentThread == receiverThread) {
                     activeType = G::DirectConnection;
                 } else {
@@ -139,19 +55,36 @@ public:
             }
 
             if (activeType == G::QueuedConnection) {
-                auto slot = conn.slot;
-                auto boundSlot = [slot, args...]() {
-                    slot(args...);
+                // Post the event to the receiver's thread event loop
+                auto boundSlot = [weakLife, receiver, slotFunc, args...]() {
+                    if (auto lifeCheck = weakLife.lock()) {
+                        (receiver->*slotFunc)(args...);
+                    }
                 };
-
                 auto* event = new GMetaCallEvent(boundSlot);
-                GCoreApplication::postEvent(conn.receiver, event);
+                GCoreApplication::postEvent(receiver, event);
             } else {
-                conn.slot(args...);
+                // Execute directly in the current thread
+                (receiver->*slotFunc)(args...);
             }
-        }
+        };
+
+        return boost::signals2::signal<void(Args...)>::connect(wrapper);
     }
 
-private:
-    std::shared_ptr<State> m_state;
+    /**
+     * @brief Disconnects a signal-slot connection using the provided handle.
+     * @param connection The handle representing the connection to remove.
+     */
+    void disconnect(const boost::signals2::connection& connection) {
+        connection.disconnect();
+    }
+
+    /**
+     * @brief Emits the signal by invoking all connected slots.
+     * @param args The arguments to pass to the slots.
+     */
+    void emit(Args... args) {
+        boost::signals2::signal<void(Args...)>::operator()(args...);
+    }
 };

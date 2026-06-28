@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include <mutex>
+#include <memory>
 
 class GThread;
 class GEvent;
@@ -47,6 +48,12 @@ public:
      * @param callback The function to execute upon destruction.
      */
     void addCleanupCallback(std::function<void()> callback);
+
+    /**
+     * @brief Gets the weak pointer tracking the lifetime of this object.
+     * @return A weak pointer to this object's life token.
+     */
+    std::weak_ptr<int> objectLife() const { return m_life; }
 
     /**
      * @brief Connects a signal to a slot on a receiver object.
