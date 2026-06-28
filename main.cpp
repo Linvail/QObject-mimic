@@ -84,6 +84,29 @@ int main(int argc, char** argv) {
         sig();
     }
 
+    // Test context-based functor/lambda connect
+    {
+        std::cout << "Testing context-based functor connect (Direct)..." << std::endl;
+        GSignal<int> sig;
+        {
+            GObject context;
+            int receivedValue = 0;
+            GObject::connect(sig, &context, [&receivedValue](int val) {
+                receivedValue = val;
+            }, G::DirectConnection);
+
+            sig.emit(42);
+            if (receivedValue != 42) {
+                std::cerr << "FAIL: Direct functor connect did not execute or receive value!" << std::endl;
+                return 1;
+            }
+            std::cout << "  Direct functor connect passed." << std::endl;
+        } // context is destroyed here
+
+        sig.emit(99); // Should not crash and not call
+        std::cout << "  Functor connect with destroyed context passed (no crash)." << std::endl;
+    }
+
     // Test manual disconnect
     {
         DisconnectTestReceiver testReceiver;
@@ -124,6 +147,13 @@ int main(int argc, char** argv) {
     auto* temporaryReceiver = new Receiver("Temporary");
 
     // Modern syntax: GObject::connect(sender.signal, receiver, slot)
+    bool lambdaCalled = false;
+    GObject::connect(worker.dataReady, &receiver, [&lambdaCalled](int value, std::string message) {
+        std::cout << "Lambda slot with receiver context executed in thread ID: " << std::this_thread::get_id() << std::endl;
+        std::cout << "Received value: " << value << ", message: " << message << std::endl;
+        lambdaCalled = true;
+    });
+
     GObject::connect(worker.dataReady, &receiver, &Receiver::onDataReady);
     GObject::connect(worker.dataReady, temporaryReceiver, &Receiver::onDataReady);
 
@@ -138,6 +168,12 @@ int main(int argc, char** argv) {
     app.exec();
 
     std::cout << "Main event loop ended." << std::endl;
+
+    if (!lambdaCalled) {
+        std::cerr << "FAIL: Queued functor connection was not executed!" << std::endl;
+        return 1;
+    }
+    std::cout << "SUCCESS: Queued functor connection test passed!" << std::endl;
 
     worker.wait();
 

@@ -71,6 +71,22 @@ public:
         return {};
     }
 
+    /**
+     * @brief Connects a signal to a general functor or lambda slot under a receiver context.
+     * @param signal The signal to connect.
+     * @param context The GObject context that defines the target thread and lifetime.
+     * @param slot The slot functor (lambda, functor, std::function, etc.).
+     * @param type The type of connection.
+     * @return A handle representing the connection.
+     */
+    template <typename Signal, typename Functor>
+    static G::ConnectionHandle connect(Signal& signal, GObject* context, Functor slot, G::ConnectionType type = G::AutoConnection) {
+        if (context) {
+            return signal.connect(context, slot, type);
+        }
+        return {};
+    }
+
 private:
     std::shared_ptr<int> m_life;
     GThread* m_thread;
