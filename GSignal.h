@@ -5,6 +5,7 @@
 #include "GCoreApplication.h"
 #include "GObject.h"
 #include "GThread.h"
+#include "GAbstractEventDispatcher.h"
 #include <boost/signals2.hpp>
 #include <memory>
 
@@ -62,7 +63,11 @@ public:
                     }
                 };
                 auto* event = new GMetaCallEvent(boundSlot);
-                GCoreApplication::postEvent(receiver, event);
+                if (receiverThread && receiverThread->eventDispatcher()) {
+                    receiverThread->eventDispatcher()->postEvent(receiver, static_cast<GEvent*>(event));
+                } else {
+                    delete event;
+                }
             } else {
                 // Execute directly in the current thread
                 (receiver->*slotFunc)(args...);
@@ -114,7 +119,11 @@ public:
                     }
                 };
                 auto* event = new GMetaCallEvent(boundSlot);
-                GCoreApplication::postEvent(context, event);
+                if (contextThread && contextThread->eventDispatcher()) {
+                    contextThread->eventDispatcher()->postEvent(context, static_cast<GEvent*>(event));
+                } else {
+                    delete event;
+                }
             } else {
                 // Execute directly in the current thread
                 slot(args...);
