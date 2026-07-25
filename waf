@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+import subprocess
+
+def main():
+    # Get the directory of this wrapper script
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    # Path to the real waf script in the submodule
+    waf_path = os.path.join(cwd, 'submodules', 'external', 'waf', 'waf')
+    waf_light_path = os.path.join(cwd, 'submodules', 'external', 'waf', 'waf-light')
+
+    if not os.path.exists(waf_light_path):
+        print("Error: Waf submodule is not initialized.", file=sys.stderr)
+        print("Please run the following command to initialize it:", file=sys.stderr)
+        print("    git submodule update --init --recursive", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.path.exists(waf_path):
+        print("Waf binary is missing in the submodule. Building it using waf-light...", file=sys.stderr)
+        try:
+            build_dir = os.path.dirname(waf_light_path)
+            result = subprocess.run([sys.executable, 'waf-light'], cwd=build_dir, capture_output=True, text=True)
+            if result.returncode != 0:
+                print("Error: Failed to build Waf using waf-light.", file=sys.stderr)
+                print(result.stderr, file=sys.stderr)
+                sys.exit(result.returncode)
+            print("Waf binary built successfully.", file=sys.stderr)
+        except Exception as e:
+            print(f"Error: Exception occurred while building Waf: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Run the real waf script with Python
+    cmd = [sys.executable, waf_path] + sys.argv[1:]
+
+    # Run and forward exit code
+    try:
+        result = subprocess.run(cmd)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

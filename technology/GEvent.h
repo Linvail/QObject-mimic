@@ -14,6 +14,8 @@ public:
     enum Type {
         None = 0,
         MetaCall = 1,
+        Timer = 2,
+        DeferredDelete = 3,
         User = 1000
     };
 
@@ -22,7 +24,7 @@ public:
      * @param type The type of the event.
      */
     GEvent(Type type) : m_type(type) {}
-    
+
     /**
      * @brief Virtual destructor.
      */
@@ -30,7 +32,7 @@ public:
 
     /**
      * @brief Gets the type of the event.
-     * @return The event type.
+     * @return The event type. Thread-safe.
      */
     Type type() const { return m_type; }
 
@@ -61,4 +63,37 @@ public:
 
 private:
     std::function<void()> m_callback;
+};
+
+/**
+ * @brief Event sent when a timer expires.
+ */
+class GTimerEvent : public GEvent {
+public:
+    /**
+     * @brief Constructs a timer event with a given timer ID.
+     * @param timerId The unique identifier of the expired timer.
+     */
+    GTimerEvent(int timerId)
+        : GEvent(Timer), m_timerId(timerId) {}
+
+    /**
+     * @brief Gets the timer ID associated with this event.
+     * @return The timer ID. Thread-safe.
+     */
+    int timerId() const { return m_timerId; }
+
+private:
+    int m_timerId;
+};
+
+/**
+ * @brief Event sent to delete an object asynchronously.
+ */
+class GDeferredDeleteEvent : public GEvent {
+public:
+    /**
+     * @brief Constructs a deferred delete event.
+     */
+    GDeferredDeleteEvent() : GEvent(DeferredDelete) {}
 };

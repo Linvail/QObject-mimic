@@ -1,0 +1,11 @@
+# wscript, python files, markdown, and C++ source files checkout as LF on Windows.
+* text eol=lf
+
+# Force Windows batch scripts to check out as CRLF to prevent parser errors.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Denote binary files.
+*.png binary
+*.jpg binary
+*.exe binary

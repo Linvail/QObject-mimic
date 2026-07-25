@@ -1,0 +1,5 @@
+# Configure Pyrefly search path to include the Waf submodule directory
+# so that the IDE's linter can locate the 'waflib' package.
+search-path = [
+    "submodules/external/waf"
+]

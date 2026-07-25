@@ -1,0 +1,112 @@
+from waflib import Configure, Context, Errors, Options, Utils, Logs
+from waflib.Configure import conf
+import glob, os
+
+##
+# @brief Checks if the Boost headers are present and bootstraps them if they are missing.
+#
+# @param ctx The Waf ConfigurationContext.
+#
+def check_and_bootstrap_boost(ctx):
+    import sys, subprocess
+    boost_dir = os.path.join(ctx.path.abspath(), 'submodules', 'external', 'boost')
+    boost_headers_dir = os.path.join(boost_dir, 'boost')
+    core_check_file = os.path.join(boost_headers_dir, 'core', 'checked_delete.hpp')
+    if not os.path.exists(boost_headers_dir) or not os.path.exists(core_check_file):
+        Logs.info("Boost headers directory not found. Bootstrapping Boost and generating headers...")
+        if not os.path.exists(boost_dir) or not os.listdir(boost_dir):
+            Logs.error("Boost submodule is not initialized. Please run: git submodule update --init --recursive")
+            sys.exit(1)
+        is_windows = sys.platform.startswith('win')
+        try:
+            if is_windows:
+                bootstrap_cmd = 'bootstrap.bat'
+                b2_exe = os.path.join(boost_dir, 'b2.exe')
+                Logs.info("Running bootstrap.bat...")
+                res = subprocess.run([bootstrap_cmd], cwd=boost_dir, shell=True, capture_output=True, text=True)
+                if res.returncode != 0:
+                    Logs.error("Boost bootstrap failed:\n%s" % res.stderr)
+                    sys.exit(res.returncode)
+                Logs.info("Running b2 headers...")
+                res = subprocess.run([b2_exe, 'headers'], cwd=boost_dir, capture_output=True, text=True)
+                if res.returncode != 0:
+                    Logs.error("Boost b2 headers generation failed:\n%s" % res.stderr)
+                    sys.exit(res.returncode)
+            else:
+                bootstrap_cmd = './bootstrap.sh'
+                b2_exe = './b2'
+                Logs.info("Running bootstrap.sh...")
+                res = subprocess.run([bootstrap_cmd], cwd=boost_dir, capture_output=True, text=True)
+                if res.returncode != 0:
+                    Logs.error("Boost bootstrap failed:\n%s" % res.stderr)
+                    sys.exit(res.returncode)
+                Logs.info("Running b2 headers...")
+                res = subprocess.run([b2_exe, 'headers'], cwd=boost_dir, capture_output=True, text=True)
+                if res.returncode != 0:
+                    Logs.error("Boost b2 headers generation failed:\n%s" % res.stderr)
+                    sys.exit(res.returncode)
+            Logs.info("Boost headers generated successfully.")
+        except Exception as e:
+            Logs.error("Failed to automatically generate Boost headers: %s" % e)
+            sys.exit(1)
+
+check_and_bootstrap_boost(ctx)
+
+local_tools = [
+    "variant-builder",
+    "toolchains",
+    "debug-info",
+]
+
+ctx.load(local_tools, tooldir='tools')
+ctx.load('clang_compilation_database', tooldir='submodules/external/waf/waflib/extras')
+
+# Monkey-patch clangdb to copy compile_commands.json to the workspace root
+import sys, shutil
+clang_db_module = sys.modules.get('clang_compilation_database')
+if clang_db_module:
+    old_write = clang_db_module.ClangDbContext.write_compilation_database
+    ##
+    # @brief Custom write method for ClangDbContext to copy compile_commands.json to the workspace root.
+    #
+    # @param self The ClangDbContext instance.
+    #
+    def new_write(self):
+        old_write(self)
+        database_file = self.bldnode.make_node('compile_commands.json')
+        if os.path.exists(database_file.abspath()):
+            dest_path = os.path.join(self.srcnode.abspath(), 'compile_commands.json')
+            try:
+                shutil.copy2(database_file.abspath(), dest_path)
+                Logs.info('Copied compile_commands.json to workspace root: %s' % dest_path)
+            except Exception as e:
+                Logs.warn('Failed to copy compile_commands.json to root: %s' % e)
+    clang_db_module.ClangDbContext.write_compilation_database = new_write
+
+    # Support running clangdb before install/uninstall commands too
+    from waflib import Build, Scripting
+    old_execute_build_patched = Build.BuildContext.execute_build
+    ##
+    # @brief Custom execute_build method to trigger clangdb before build, install, and uninstall commands.
+    #
+    # @param self The BuildContext instance.
+    #
+    def custom_execute_build(self):
+        if self.cmd.startswith('install') or self.cmd.startswith('uninstall'):
+            clangdb_cmd = self.cmd.replace('install', 'clangdb').replace('uninstall', 'clangdb')
+            try:
+                Scripting.run_command(clangdb_cmd)
+            except Exception as e:
+                Logs.warn('Failed to run clangdb before command %s: %s' % (self.cmd, e))
+        old_execute_build_patched(self)
+    Build.BuildContext.execute_build = custom_execute_build
+
+
+ctx.env.PREFIX = "./usr"
+
+# Track all tools files for Waf's autoconfig Node hashing
+if os.path.exists('tools'):
+    for f in glob.glob('tools/**/*.py', recursive=True):
+        abspath = os.path.abspath(f)
+        ctx.files.append(abspath)
+        ctx.hash = Utils.h_list((ctx.hash, Utils.readf(abspath, 'rb')))

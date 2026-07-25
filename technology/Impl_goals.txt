@@ -1,0 +1,97 @@
+* Overall guides:
+** You can use all features of C++17.
+** If C++17 cannot achieve the goal, try to use boost (submodules\external\boost), e.g. we ust boost::signal2 already.
+** This project will be used in multi-thread environment. If a function should be thread-safte, make it so, and mention it in its comment.
+** If atomic operation is required, use it.
+** Do not copy Qt's code directly. You should understnad its logic and implement it in your own way. 
+** We only need a subset of the Qt's features. Do not need to mimic every class if we don't need it.
+** Do not need to create `Private` classes, like QObjectPrivate.
+** Qt5 source code could be found in H:\Projects-2026\qt-everywhere-src-5.15.19\. You can read that folder without asking permissions.
+
+* GObject should provide the followings function like QObject.
+
+These functions are also thread-safe:
+connect() // for class (must inherit GObject) object and class method.
+connect() // for context object and functor/lambda.
+disconnect() // for disconnecting the signal and slot.
+deleteLater()
+
+moveToThread()
+objectName()
+setObjectName()
+installEventFilter()
+removeEventFilter()
+eventFilter()
+thread()
+
+killTimer()
+startTimer()
+timerEvent() // You need to create GTimerEvent class for this.
+
+* QThread should provide the following functions like QThread. Use std::thread as the backend.
+If a function can not be implemented based on std::thread, skip it.
+
+eventDispatcher() 
+isFinished()
+isRunning()
+setEventDispatcher()
+wait(unsigned long)
+
+exit(int returnCode = 0)
+quit()
+start()
+
+public signals:
+finished()
+started()
+
+currentThread() // static, for getting the current thread.
+
+template <typename Function, typename Args> 
+GThread *GThread::create(Function &&f, Args &&... args) // static, for creating a GThread object.
+
+Protected Functions:
+exec()
+run()
+
+* GSignal should be revised. It should be kept as simple as possible.
+The complex connect logic should be done in GObject::connect.
+
+* GAbstractEventDispatcher should be a abstract class. 
+A concrete class should be created for Win32 and Linux.
+
+* GAbstractEventDispatcher::processEvents must be re-designed. It should just process the pending events, the loop should
+not be done within this function. GThread should be responsible for the loop.
+
+* Need new class : GTimer 
+This class should provide the following functions like QTimer.
+
+interval()
+isActive() 
+isSingleShot()
+setInterval(int msec)
+timerId() const
+start(int msec)
+start()
+stop()
+
+Signals:
+timeout()
+
+Static Public Members:
+singleShot(int msec, Functor functor)
+singleShot(int msec, const QObject *context, Functor functor)
+singleShot(int msec, const QObject *receiver, PointerToMemberFunction method)
+
+////////////////////////////////////////////////////////////
+* How to configure waf:
+On base or Linux:
+./waf configure 
+On Windows cmd:
+waf configure
+
+* How to build:
+On base or Linux:
+./waf install --project=Demo
+On Windows cmd:
+waf install --project=Demo

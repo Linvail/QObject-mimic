@@ -3,6 +3,7 @@
 #include "GObject.h"
 #include "GThread.h"
 #include <memory>
+#include <atomic>
 
 class GAbstractEventDispatcher;
 class GEvent;
@@ -26,14 +27,14 @@ public:
 
     /**
      * @brief Returns the global application instance.
-     * @return A pointer to the GCoreApplication instance.
+     * @return A pointer to the GCoreApplication instance. Thread-safe.
      */
     static GCoreApplication* instance();
 
     /**
      * @brief Thread-safely posts an event to a receiver's thread event queue.
      * @param receiver The target object.
-     * @param event The event to dispatch.
+     * @param event The event to dispatch. Thread-safe.
      */
     static void postEvent(GObject* receiver, GEvent* event);
 
@@ -44,7 +45,7 @@ public:
     int exec();
 
     /**
-     * @brief Tells the application to exit with return code 0.
+     * @brief Tells the application to exit with return code 0. Thread-safe.
      */
     void quit();
 
@@ -53,4 +54,5 @@ private:
 
     std::unique_ptr<GThread> m_mainThread;
     std::unique_ptr<GAbstractEventDispatcher> m_dispatcher;
+    std::atomic<bool> m_exiting{false};
 };

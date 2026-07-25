@@ -1,0 +1,54 @@
+
+from waflib import Options, Logs
+import platform, os
+
+def setup_build_env(bld):
+    target_platform = bld.target_platform
+    arch = bld.target_arch
+    compiler = 'gcc'
+    host_platform = platform.system()
+    if host_platform == "Windows":
+        compiler = "msvc"
+    elif host_platform == "Linux" and target_platform == "Windows":
+        # Cross-compiling from Linux to Windows, so we use clang.
+        compiler = "clang"
+    elif host_platform == "Linux":
+        # TODO: Allow user to choose gcc.
+        compiler = "clang"
+    else:
+        bld.fatal("Unsupported host platform: %s" % host_platform)
+
+    env_name = "%s-%s-%s-%s-%s" % (target_platform, arch, host_platform, compiler, bld.mode)
+
+    if env_name not in bld.all_envs:
+        bld.fatal("Environment '%s' does not exist." % env_name)
+
+    env = bld.all_envs[env_name].derive()
+    bld.set_env(env)
+    return env
+
+
+def build_demo(bld):
+    setup_build_env(bld)
+    bld.recurse("submodules/external")
+    bld.recurse("technology")
+    kw = {}
+    kw["features"] = ["cxx", "cxxprogram", "debug-info"]
+    kw["use"] = ["GQT"]
+    kw["source"] = ["src/main.cpp"]
+
+    bld(target='Demo', **kw)
+
+
+product_table = {
+    "Demo" : build_demo,
+}
+
+product_table[bld.project](bld)
+
+if not Options.options.destdir:
+    Options.options.destdir = os.path.join("install", bld.variant)
+    Logs.info("destdir is not specified, use default: %s" % Options.options.destdir)
+if not os.path.isabs(Options.options.destdir):
+    Options.options.destdir = os.path.join(bld.top_dir, Options.options.destdir)
+    Logs.info("Installation directory: %s" % Options.options.destdir)

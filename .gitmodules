@@ -1,3 +1,6 @@
-[submodule "submodule/external/boost"]
-	path = submodule/external/boost
+[submodule "submodules/external/waf"]
+	path = submodules/external/waf
+	url = https://gitlab.com/ita1024/waf.git
+[submodule "submodules/external/boost"]
+	path = submodules/external/boost
 	url = https://github.com/boostorg/boost.git

@@ -1,0 +1,10 @@
+from waflib import Options
+
+local_tools = [
+    "variant-builder",
+    "toolchains",
+    "debug-info",
+]
+
+opt.load(local_tools, tooldir='tools')
+opt.load('clang_compilation_database', tooldir='submodules/external/waf/waflib/extras')

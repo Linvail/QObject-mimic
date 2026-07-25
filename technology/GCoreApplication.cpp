@@ -1,16 +1,29 @@
 #include "GCoreApplication.h"
 #include "GAbstractEventDispatcher.h"
+#include "GEventDispatcherDefault.h"
+#if defined(_WIN32)
+#include "GEventDispatcherWin32.h"
+#elif defined(__linux__)
+#include "GEventDispatcherLinux.h"
+#endif
 #include "GEvent.h"
 
 GCoreApplication* GCoreApplication::s_instance = nullptr;
 
 GCoreApplication::GCoreApplication(int& argc, char** argv) : GObject(nullptr) {
+    (void)argc;
+    (void)argv;
     s_instance = this;
 
-    m_dispatcher = std::make_unique<GAbstractEventDispatcher>();
+#if defined(_WIN32)
+    m_dispatcher = std::make_unique<GEventDispatcherWin32>();
+#elif defined(__linux__)
+    m_dispatcher = std::make_unique<GEventDispatcherLinux>();
+#else
+    m_dispatcher = std::make_unique<GEventDispatcherDefault>();
+#endif
     m_mainThread = std::make_unique<GThread>();
 
-    // Hijack the current thread as main thread
     m_mainThread->m_dispatcher = m_dispatcher.get();
     GThread::s_currentThread = m_mainThread.get();
 
@@ -43,14 +56,19 @@ void GCoreApplication::postEvent(GObject* receiver, GEvent* event) {
 }
 
 int GCoreApplication::exec() {
+    m_exiting.store(false);
     if (m_dispatcher) {
-        m_dispatcher->processEvents();
+        while (!m_exiting.load()) {
+            m_dispatcher->processEvents();
+        }
     }
     return 0;
 }
 
 void GCoreApplication::quit() {
+    m_exiting.store(true);
     if (m_dispatcher) {
         m_dispatcher->interrupt();
+        m_dispatcher->wakeUp();
     }
 }

@@ -1,9 +1,9 @@
-# Build directories
-build/
-build-linux/
-bin/
-obj/
-out/
+out
+install
+tools/__pycache__
+.vscode
+.lock-*
+compile_commands.json
 
 # IDE files
 .vs/
