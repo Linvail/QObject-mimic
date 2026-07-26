@@ -1,4 +1,3 @@
-
 from waflib import Options, Logs
 import platform, os
 
@@ -40,8 +39,16 @@ def build_demo(bld):
     bld(target='Demo', **kw)
 
 
+def build_tests(bld):
+    setup_build_env(bld)
+    bld.recurse("submodules/external")
+    bld.recurse("technology")
+    bld.recurse("tests")
+
+
 product_table = {
     "Demo" : build_demo,
+    "Tests": build_tests,
 }
 
 product_table[bld.project](bld)

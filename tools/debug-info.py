@@ -54,9 +54,7 @@ class strip_debug_task(Task):
             return ret
 
         # 4. Link the stripped executable to the debug file
-        # Since they are located in the same directory, use the base name of the debug file
-        debug_name = self.outputs[0].name
-        cmd3 = objcopy_cmd + ['--add-gnu-debuglink=' + debug_name, executable]
+        cmd3 = objcopy_cmd + ['--add-gnu-debuglink=' + debug_file, executable]
         ret = self.exec_command(cmd3)
         return ret
 

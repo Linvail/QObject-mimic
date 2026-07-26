@@ -11,5 +11,5 @@ if platform.system() == 'Windows':
 elif platform.system() == 'Linux':
     out = 'out/linux'
 
-projects = ['Demo']
+projects = ['Demo', 'Tests']
 modes = ['debug', 'release']

@@ -61,46 +61,6 @@ local_tools = [
 ctx.load(local_tools, tooldir='tools')
 ctx.load('clang_compilation_database', tooldir='submodules/external/waf/waflib/extras')
 
-# Monkey-patch clangdb to copy compile_commands.json to the workspace root
-import sys, shutil
-clang_db_module = sys.modules.get('clang_compilation_database')
-if clang_db_module:
-    old_write = clang_db_module.ClangDbContext.write_compilation_database
-    ##
-    # @brief Custom write method for ClangDbContext to copy compile_commands.json to the workspace root.
-    #
-    # @param self The ClangDbContext instance.
-    #
-    def new_write(self):
-        old_write(self)
-        database_file = self.bldnode.make_node('compile_commands.json')
-        if os.path.exists(database_file.abspath()):
-            dest_path = os.path.join(self.srcnode.abspath(), 'compile_commands.json')
-            try:
-                shutil.copy2(database_file.abspath(), dest_path)
-                Logs.info('Copied compile_commands.json to workspace root: %s' % dest_path)
-            except Exception as e:
-                Logs.warn('Failed to copy compile_commands.json to root: %s' % e)
-    clang_db_module.ClangDbContext.write_compilation_database = new_write
-
-    # Support running clangdb before install/uninstall commands too
-    from waflib import Build, Scripting
-    old_execute_build_patched = Build.BuildContext.execute_build
-    ##
-    # @brief Custom execute_build method to trigger clangdb before build, install, and uninstall commands.
-    #
-    # @param self The BuildContext instance.
-    #
-    def custom_execute_build(self):
-        if self.cmd.startswith('install') or self.cmd.startswith('uninstall'):
-            clangdb_cmd = self.cmd.replace('install', 'clangdb').replace('uninstall', 'clangdb')
-            try:
-                Scripting.run_command(clangdb_cmd)
-            except Exception as e:
-                Logs.warn('Failed to run clangdb before command %s: %s' % (self.cmd, e))
-        old_execute_build_patched(self)
-    Build.BuildContext.execute_build = custom_execute_build
-
 
 ctx.env.PREFIX = "./usr"
 
