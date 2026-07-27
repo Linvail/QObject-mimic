@@ -3,6 +3,15 @@
 #include "GEvent.h"
 #include "GAbstractEventDispatcher.h"
 #include <algorithm>
+#include <unordered_map>
+
+struct CallLaterNode {
+    std::mutex mutex;
+    std::function<void()> invoker;
+};
+
+static std::mutex s_callLaterMutex;
+static std::unordered_map<GObject::GCallLaterKey, std::shared_ptr<CallLaterNode>, GObject::GCallLaterKeyHash> s_pendingCallLaters;
 
 std::atomic<int> GObject::s_nextTimerId{1};
 
@@ -18,6 +27,17 @@ GObject::~GObject() {
         }
     }
 
+    {
+        std::lock_guard<std::mutex> lock(s_callLaterMutex);
+        for (auto it = s_pendingCallLaters.begin(); it != s_pendingCallLaters.end(); ) {
+            if (it->first.context == this) {
+                it = s_pendingCallLaters.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     GThread* t = m_thread.load();
     if (t) {
         GAbstractEventDispatcher* dispatcher = t->eventDispatcher();
@@ -28,6 +48,55 @@ GObject::~GObject() {
 
     m_life.reset();
 }
+
+void GObject::scheduleCallLater(GObject* context, const GCallLaterKey& key, std::function<void()> invoker) {
+    if (!context) {
+        return;
+    }
+
+    std::shared_ptr<CallLaterNode> node;
+    bool isNew = false;
+
+    {
+        std::lock_guard<std::mutex> lock(s_callLaterMutex);
+        auto it = s_pendingCallLaters.find(key);
+        if (it != s_pendingCallLaters.end()) {
+            node = it->second;
+        } else {
+            node = std::make_shared<CallLaterNode>();
+            s_pendingCallLaters[key] = node;
+            isNew = true;
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> nodeLock(node->mutex);
+        node->invoker = std::move(invoker);
+    }
+
+    if (isNew) {
+        std::weak_ptr<int> weakLife = context->objectLife();
+        auto metaCall = [key, node, weakLife]() {
+            std::function<void()> fnToRun;
+            {
+                std::lock_guard<std::mutex> lock(s_callLaterMutex);
+                s_pendingCallLaters.erase(key);
+            }
+            {
+                std::lock_guard<std::mutex> nodeLock(node->mutex);
+                fnToRun = std::move(node->invoker);
+            }
+            if (fnToRun) {
+                if (auto life = weakLife.lock()) {
+                    fnToRun();
+                }
+            }
+        };
+
+        dispatchMetaCall(context, metaCall, G::QueuedConnection);
+    }
+}
+
 
 GThread* GObject::thread() const {
     return m_thread.load();

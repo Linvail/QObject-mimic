@@ -38,6 +38,13 @@ namespace G {
     using ConnectionHandle = boost::signals2::connection;
 
     /**
+     * @brief Helper type trait to detect GSignal instances.
+     * @tparam T Type to inspect.
+     */
+    template <typename T>
+    struct IsGSignal : std::false_type {};
+
+    /**
      * @brief Type traits for inspecting member function pointers.
      * @tparam T The type to inspect.
      */

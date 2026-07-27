@@ -52,3 +52,12 @@ public:
 private:
     boost::signals2::signal<void(Args...)> m_signal;
 };
+
+namespace G {
+    /**
+     * @brief Specialization of IsGSignal for GSignal types.
+     * @tparam Args Argument types.
+     */
+    template <typename... Args>
+    struct IsGSignal<GSignal<Args...>> : std::true_type {};
+}

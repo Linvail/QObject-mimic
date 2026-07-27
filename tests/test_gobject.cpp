@@ -590,3 +590,205 @@ TEST(GObjectTest, CrossThreadDirectConnection) {
     workerThread.quit();
     workerThread.wait();
 }
+
+static int g_testFreeFuncCount = 0;
+static int g_testFreeFuncLastVal = 0;
+
+/**
+ * @brief Free function used for testing GObject::callLater free function overload.
+ * @param val Received test value.
+ */
+static void testCallLaterFreeFunc(int val) {
+    g_testFreeFuncLastVal = val;
+    g_testFreeFuncCount++;
+}
+
+/**
+ * @brief Tests GObject::callLater with a member function slot.
+ */
+TEST(GObjectTest, CallLaterMemberFunction) {
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher()) {
+        std::this_thread::yield();
+    }
+
+    GObjectTestReceiver receiver;
+    receiver.moveToThread(&workerThread);
+
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 42);
+
+    GSignal<> quitSig;
+    GObject::connect(quitSig, &receiver, [&workerThread]() {
+        workerThread.quit();
+    }, G::QueuedConnection);
+    quitSig.emit();
+
+    workerThread.wait();
+
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 42);
+    EXPECT_EQ(receiver.executedThread(), &workerThread);
+}
+
+/**
+ * @brief Tests GObject::callLater deduplication and parameter overwriting.
+ *
+ * Verifies that invoking callLater multiple times in the same cycle collapses to a single
+ * execution using the arguments of the last call.
+ */
+TEST(GObjectTest, CallLaterDeduplicationAndLastArgs) {
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher()) {
+        std::this_thread::yield();
+    }
+
+    GObjectTestReceiver receiver;
+    receiver.moveToThread(&workerThread);
+
+    // Pause workerThread's event processing so all callLater invocations land in the same event loop cycle
+    std::mutex blockMutex;
+    std::condition_variable blockCv;
+    bool canProceed = false;
+
+    GSignal<> blockSig;
+    GObject::connect(blockSig, &receiver, [&blockMutex, &blockCv, &canProceed]() {
+        std::unique_lock<std::mutex> lock(blockMutex);
+        blockCv.wait(lock, [&canProceed]() { return canProceed; });
+    }, G::QueuedConnection);
+
+    blockSig.emit();
+
+    // Ensure workerThread has entered the block slot before issuing callLater
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 10);
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 20);
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 30);
+
+    // Release workerThread to process pending event loop queue
+    {
+        std::lock_guard<std::mutex> lock(blockMutex);
+        canProceed = true;
+    }
+    blockCv.notify_all();
+
+    GSignal<> quitSig;
+    GObject::connect(quitSig, &receiver, [&workerThread]() {
+        workerThread.quit();
+    }, G::QueuedConnection);
+    quitSig.emit();
+
+    workerThread.wait();
+
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 30);
+}
+
+
+/**
+ * @brief Tests GObject::callLater with a free function.
+ */
+TEST(GObjectTest, CallLaterFreeFunction) {
+    g_testFreeFuncCount = 0;
+    g_testFreeFuncLastVal = 0;
+
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher()) {
+        std::this_thread::yield();
+    }
+
+    GObject context;
+    context.moveToThread(&workerThread);
+
+    GObject::callLater(&context, &testCallLaterFreeFunc, 99);
+
+    GSignal<> quitSig;
+    GObject::connect(quitSig, &context, [&workerThread]() {
+        workerThread.quit();
+    }, G::QueuedConnection);
+    quitSig.emit();
+
+    workerThread.wait();
+
+    EXPECT_EQ(g_testFreeFuncCount, 1);
+    EXPECT_EQ(g_testFreeFuncLastVal, 99);
+}
+
+/**
+ * @brief Tests GObject::callLater with a GSignal instance.
+ */
+TEST(GObjectTest, CallLaterSignal) {
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher()) {
+        std::this_thread::yield();
+    }
+
+    GObjectTestReceiver receiver;
+    receiver.moveToThread(&workerThread);
+
+    GSignal<int> sig;
+    GObject::connect(sig, &receiver, &GObjectTestReceiver::onValueReceived, G::DirectConnection);
+
+    GObject::callLater(&receiver, sig, 777);
+
+    GSignal<> quitSig;
+    GObject::connect(quitSig, &receiver, [&workerThread]() {
+        workerThread.quit();
+    }, G::QueuedConnection);
+    quitSig.emit();
+
+    workerThread.wait();
+
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 777);
+}
+
+/**
+ * @brief Tests GObject::callLater execution across multiple event loop cycles.
+ */
+TEST(GObjectTest, CallLaterMultipleCycles) {
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher()) {
+        std::this_thread::yield();
+    }
+
+    GObjectTestReceiver receiver;
+    receiver.moveToThread(&workerThread);
+
+    // Cycle 1
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 100);
+
+    GSignal<> syncSig1;
+    bool sync1Done = false;
+    GObject::connect(syncSig1, &receiver, [&sync1Done]() {
+        sync1Done = true;
+    }, G::QueuedConnection);
+    syncSig1.emit();
+
+    while (!sync1Done) {
+        std::this_thread::yield();
+    }
+
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 100);
+
+    // Cycle 2
+    GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 200);
+
+    GSignal<> quitSig;
+    GObject::connect(quitSig, &receiver, [&workerThread]() {
+        workerThread.quit();
+    }, G::QueuedConnection);
+    quitSig.emit();
+
+    workerThread.wait();
+
+    EXPECT_EQ(receiver.callCount(), 2);
+    EXPECT_EQ(receiver.lastValue(), 200);
+}
+
