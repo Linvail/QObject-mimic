@@ -143,11 +143,18 @@ void GTimer::singleShot(int msec, Functor functor)
             }
         }
 
+    public:
+        int timerId() const { return m_id; }
+
     private:
         Functor m_fn;
         int     m_id{ -1 };
     };
-    new GSingleShotHelper(msec, functor);
+    auto* helper = new GSingleShotHelper(msec, functor);
+    if (helper->timerId() == -1)
+    {
+        delete helper;
+    }
 }
 
 template<typename Functor>
@@ -180,11 +187,18 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
             }
         }
 
+    public:
+        int timerId() const { return m_id; }
+
     private:
         Functor m_fn;
         int     m_id{ -1 };
     };
-    new GSingleShotContextHelper(const_cast<GObject*>(context), msec, functor);
+    auto* helper = new GSingleShotContextHelper(const_cast<GObject*>(context), msec, functor);
+    if (helper->timerId() == -1)
+    {
+        delete helper;
+    }
 }
 
 template<typename Receiver, typename MemberFunc>
