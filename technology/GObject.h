@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GOBJECT_H
+#define GOBJECT_H
 
 #include "GGlobal.h"
 #include "GEvent.h"
@@ -1449,3 +1450,5 @@ GObject::callLater(GObject* context, Target&& target, Args&&... args)
     static_assert(sizeof(Target) == 0,
                   "Lambdas and general functors are not allowed in callLater.");
 }
+
+#endif // GOBJECT_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GEVENTDISPATCHERDEFAULT_H
+#define GEVENTDISPATCHERDEFAULT_H
 
 #include "GAbstractEventDispatcher.h"
 #include <deque>
@@ -108,3 +109,5 @@ private:
     std::condition_variable m_cv;
     std::atomic<bool>       m_interrupt{ false };
 };
+
+#endif // GEVENTDISPATCHERDEFAULT_H

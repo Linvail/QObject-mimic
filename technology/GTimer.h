@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GTIMER_H
+#define GTIMER_H
 
 #include "GObject.h"
 #include "GSignal.h"
@@ -211,3 +212,5 @@ void GTimer::singleShot(int msec, const Receiver* receiver, MemberFunc method)
     auto bound = [receiver, method]() { (const_cast<Receiver*>(receiver)->*method)(); };
     singleShot(msec, static_cast<const GObject*>(receiver), bound);
 }
+
+#endif // GTIMER_H

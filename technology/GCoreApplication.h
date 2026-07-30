@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GCOREAPPLICATION_H
+#define GCOREAPPLICATION_H
 
 #include "GObject.h"
 #include "GThread.h"
@@ -57,3 +58,5 @@ private:
     std::unique_ptr<GAbstractEventDispatcher> m_dispatcher;
     std::atomic<bool>                         m_exiting{ false };
 };
+
+#endif // GCOREAPPLICATION_H

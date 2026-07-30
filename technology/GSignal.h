@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GSIGNAL_H
+#define GSIGNAL_H
 
 #include "GGlobal.h"
 #include <boost/signals2.hpp>
@@ -60,3 +61,5 @@ struct IsGSignal<GSignal<Args...>> : std::true_type
 {
 };
 }
+
+#endif // GSIGNAL_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GEVENTDISPATCHERWIN32_H
+#define GEVENTDISPATCHERWIN32_H
 
 #include "GEventDispatcherDefault.h"
 
@@ -21,3 +22,5 @@ public:
      */
     virtual ~GEventDispatcherWin32() override;
 };
+
+#endif // GEVENTDISPATCHERWIN32_H

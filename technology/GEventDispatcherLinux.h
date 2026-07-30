@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GEVENTDISPATCHERLINUX_H
+#define GEVENTDISPATCHERLINUX_H
 
 #include "GEventDispatcherDefault.h"
 
@@ -21,3 +22,5 @@ public:
      */
     virtual ~GEventDispatcherLinux() override;
 };
+
+#endif // GEVENTDISPATCHERLINUX_H

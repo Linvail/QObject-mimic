@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GABSTRACTEVENTDISPATCHER_H
+#define GABSTRACTEVENTDISPATCHER_H
 
 #include <deque>
 #include <mutex>
@@ -84,3 +85,5 @@ public:
      */
     virtual void interrupt() = 0;
 };
+
+#endif // GABSTRACTEVENTDISPATCHER_H

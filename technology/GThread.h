@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GTHREAD_H
+#define GTHREAD_H
 
 #include "GObject.h"
 #include "GSignal.h"
@@ -166,3 +167,5 @@ GThread* GThread::create(Function&& f, Args&&... args)
     threadObj->start();
     return threadObj;
 }
+
+#endif // GTHREAD_H

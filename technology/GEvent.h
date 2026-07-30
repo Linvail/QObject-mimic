@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GEVENT_H
+#define GEVENT_H
 
 #include <functional>
 #include <utility>
@@ -116,3 +117,5 @@ public:
     {
     }
 };
+
+#endif // GEVENT_H

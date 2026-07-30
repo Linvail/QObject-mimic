@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GGLOBAL_H
+#define GGLOBAL_H
 
 #include <memory>
 #include <type_traits>
@@ -183,3 +184,5 @@ struct MemberFunctionTraits<R (C::*)(Args...) const noexcept>
 };
 #endif
 }
+
+#endif // GGLOBAL_H
