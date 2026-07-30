@@ -115,10 +115,16 @@ protected:
      */
     int exec();
 
+public:
+    /**
+     * @brief Gets the thread's internal data container holding the event dispatcher.
+     * @return Shared pointer to the thread data.
+     */
+    std::shared_ptr<GThreadData> threadData() const { return m_data; }
+
 private:
     std::unique_ptr<std::thread>           m_thread;
-    std::atomic<GAbstractEventDispatcher*> m_dispatcher{ nullptr };
-    bool                                   m_ownsDispatcher{ false };
+    std::shared_ptr<GThreadData>           m_data;
     std::atomic<bool>                      m_running{ false };
     std::atomic<bool>                      m_finished{ false };
     std::atomic<bool>                      m_exiting{ false };

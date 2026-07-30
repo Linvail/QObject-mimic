@@ -11,6 +11,7 @@ thread_local GThread* GThread::s_currentThread = nullptr;
 GThread::GThread(GObject* parent)
 : GObject(parent)
 {
+    m_data = std::make_shared<GThreadData>();
 }
 
 GThread::~GThread()
@@ -36,16 +37,16 @@ void GThread::start()
             s_currentThread = this;
             this->moveToThread(this);
 
-            if (!m_dispatcher.load())
+            if (!m_data->dispatcher.load())
             {
 #if defined(_WIN32)
-                m_dispatcher.store(new GEventDispatcherWin32());
+                m_data->dispatcher.store(new GEventDispatcherWin32());
 #elif defined(__linux__)
-                m_dispatcher.store(new GEventDispatcherLinux());
+                m_data->dispatcher.store(new GEventDispatcherLinux());
 #else
-                m_dispatcher.store(new GEventDispatcherDefault());
+                m_data->dispatcher.store(new GEventDispatcherDefault());
 #endif
-                m_ownsDispatcher = true;
+                m_data->ownsDispatcher = true;
             }
 
             started.emit();
@@ -54,11 +55,11 @@ void GThread::start()
 
             finished.emit();
 
-            if (m_ownsDispatcher)
+            if (m_data->ownsDispatcher)
             {
-                GAbstractEventDispatcher* disp = m_dispatcher.exchange(nullptr);
+                GAbstractEventDispatcher* disp = m_data->dispatcher.exchange(nullptr);
                 delete disp;
-                m_ownsDispatcher = false;
+                m_data->ownsDispatcher = false;
             }
 
             m_running.store(false);
@@ -77,7 +78,7 @@ void GThread::exit(int returnCode)
 {
     m_exitCode.store(returnCode);
     m_exiting.store(true);
-    GAbstractEventDispatcher* dispatcher = m_dispatcher.load();
+    GAbstractEventDispatcher* dispatcher = m_data->dispatcher.load();
     if (dispatcher)
     {
         dispatcher->interrupt();
@@ -125,19 +126,19 @@ bool GThread::isFinished() const { return m_finished.load(); }
 
 GThread* GThread::currentThread() { return s_currentThread; }
 
-GAbstractEventDispatcher* GThread::eventDispatcher() const { return m_dispatcher.load(); }
+GAbstractEventDispatcher* GThread::eventDispatcher() const { return m_data->dispatcher.load(); }
 
 void GThread::setEventDispatcher(GAbstractEventDispatcher* dispatcher)
 {
-    if (m_ownsDispatcher)
+    if (m_data->ownsDispatcher)
     {
-        GAbstractEventDispatcher* oldDisp = m_dispatcher.exchange(dispatcher);
+        GAbstractEventDispatcher* oldDisp = m_data->dispatcher.exchange(dispatcher);
         delete oldDisp;
-        m_ownsDispatcher = false;
+        m_data->ownsDispatcher = false;
     }
     else
     {
-        m_dispatcher.store(dispatcher);
+        m_data->dispatcher.store(dispatcher);
     }
 }
 
@@ -145,11 +146,11 @@ void GThread::run() { exec(); }
 
 int GThread::exec()
 {
-    GAbstractEventDispatcher* dispatcher = m_dispatcher.load();
+    GAbstractEventDispatcher* dispatcher = m_data->dispatcher.load();
     while (!m_exiting.load() && dispatcher)
     {
         dispatcher->processEvents();
-        dispatcher = m_dispatcher.load();
+        dispatcher = m_data->dispatcher.load();
     }
     return m_exitCode.load();
 }

@@ -17,6 +17,13 @@
 class GThread;
 template<typename... Args>
 class GSignal;
+class GAbstractEventDispatcher;
+
+struct GThreadData
+{
+    std::atomic<GAbstractEventDispatcher*> dispatcher{ nullptr };
+    bool                                   ownsDispatcher{ false };
+};
 
 /**
  * @brief Base class for all objects participating in the signal-slot and event system.
@@ -40,6 +47,12 @@ public:
      * @return A pointer to the thread this object lives in. Thread-safe.
      */
     GThread* thread() const;
+
+    /**
+     * @brief Gets the thread data container representing the event dispatcher.
+     * @return A shared pointer to the thread data.
+     */
+    std::shared_ptr<GThreadData> threadData() const;
 
     /**
      * @brief Changes the thread affinity of this object.
@@ -687,6 +700,7 @@ private:
 
 
     std::shared_ptr<int>               m_life;
+    std::shared_ptr<GThreadData>       m_threadData;
     std::atomic<GThread*>              m_thread{ nullptr };
     GObject*                           m_parent;
     std::string                        m_objectName;

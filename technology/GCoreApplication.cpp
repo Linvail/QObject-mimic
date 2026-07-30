@@ -26,8 +26,8 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
 #endif
     m_mainThread = std::make_unique<GThread>();
 
-    m_mainThread->m_dispatcher = m_dispatcher.get();
-    GThread::s_currentThread   = m_mainThread.get();
+    m_mainThread->m_data->dispatcher = m_dispatcher.get();
+    GThread::s_currentThread         = m_mainThread.get();
 
     this->moveToThread(m_mainThread.get());
 }
@@ -35,8 +35,8 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
 GCoreApplication::~GCoreApplication()
 {
     this->moveToThread(nullptr);
-    m_mainThread->m_dispatcher = nullptr;
-    GThread::s_currentThread   = nullptr;
+    m_mainThread->m_data->dispatcher = nullptr;
+    GThread::s_currentThread         = nullptr;
     s_instance                 = nullptr;
 }
 
@@ -50,15 +50,15 @@ void GCoreApplication::postEvent(GObject* receiver, GEvent* event)
         return;
     }
 
-    GThread* thread = receiver->thread();
-    if (thread && thread->eventDispatcher())
+    if (auto tData = receiver->threadData())
     {
-        thread->eventDispatcher()->postEvent(receiver, event);
+        if (auto disp = tData->dispatcher.load())
+        {
+            disp->postEvent(receiver, event);
+            return;
+        }
     }
-    else
-    {
-        delete event;
-    }
+    delete event;
 }
 
 int GCoreApplication::exec()

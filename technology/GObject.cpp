@@ -23,7 +23,12 @@ GObject::GObject(GObject* parent)
 : m_life(std::make_shared<int>(0))
 , m_parent(parent)
 {
-    m_thread.store(GThread::currentThread());
+    GThread* current = GThread::currentThread();
+    m_thread.store(current);
+    if (current)
+    {
+        m_threadData = current->threadData();
+    }
 }
 
 GObject::~GObject()
@@ -51,11 +56,9 @@ GObject::~GObject()
         }
     }
 
-    GThread* t = m_thread.load();
-    if (t)
+    if (m_threadData)
     {
-        GAbstractEventDispatcher* dispatcher = t->eventDispatcher();
-        if (dispatcher)
+        if (GAbstractEventDispatcher* dispatcher = m_threadData->dispatcher.load())
         {
             dispatcher->removeEventsForReceiver(this);
         }
@@ -126,7 +129,13 @@ void GObject::scheduleCallLater(GObject*              context,
 
 GThread* GObject::thread() const { return m_thread.load(); }
 
-void GObject::moveToThread(GThread* thread) { m_thread.store(thread); }
+std::shared_ptr<GThreadData> GObject::threadData() const { return m_threadData; }
+
+void GObject::moveToThread(GThread* thread)
+{
+    m_thread.store(thread);
+    m_threadData = thread ? thread->threadData() : nullptr;
+}
 
 std::string GObject::objectName() const
 {
@@ -142,16 +151,17 @@ void GObject::setObjectName(const std::string& name)
 
 void GObject::deleteLater()
 {
-    GThread* targetThread = m_thread.load();
-    auto*    event        = new GDeferredDeleteEvent();
-    if (targetThread && targetThread->eventDispatcher())
+    auto* event = new GDeferredDeleteEvent();
+    if (m_threadData)
     {
-        targetThread->eventDispatcher()->postEvent(this, static_cast<GEvent*>(event));
+        if (auto disp = m_threadData->dispatcher.load())
+        {
+            disp->postEvent(this, static_cast<GEvent*>(event));
+            return;
+        }
     }
-    else
-    {
-        delete this;
-    }
+    delete event;
+    delete this;
 }
 
 void GObject::installEventFilter(GObject* filterObj)
@@ -236,22 +246,26 @@ void GObject::timerEvent(GTimerEvent* event) { (void) event; }
 
 int GObject::startTimer(int interval)
 {
-    int      timerId = s_nextTimerId.fetch_add(1);
-    GThread* t       = m_thread.load();
-    if (t && t->eventDispatcher())
+    int timerId = s_nextTimerId.fetch_add(1);
+    if (m_threadData)
     {
-        t->eventDispatcher()->registerTimer(timerId, interval, this);
-        return timerId;
+        if (auto disp = m_threadData->dispatcher.load())
+        {
+            disp->registerTimer(timerId, interval, this);
+            return timerId;
+        }
     }
     return -1;
 }
 
 void GObject::killTimer(int id)
 {
-    GThread* t = m_thread.load();
-    if (t && t->eventDispatcher())
+    if (m_threadData)
     {
-        t->eventDispatcher()->unregisterTimer(id);
+        if (auto disp = m_threadData->dispatcher.load())
+        {
+            disp->unregisterTimer(id);
+        }
     }
 }
 
@@ -286,14 +300,15 @@ void GObject::dispatchMetaCall(GObject* target, std::function<void()> slot, G::C
     if (activeType == G::QueuedConnection)
     {
         auto* event = new GMetaCallEvent(slot);
-        if (targetThread && targetThread->eventDispatcher())
+        if (auto tData = target->threadData())
         {
-            targetThread->eventDispatcher()->postEvent(target, static_cast<GEvent*>(event));
+            if (auto disp = tData->dispatcher.load())
+            {
+                disp->postEvent(target, static_cast<GEvent*>(event));
+                return;
+            }
         }
-        else
-        {
-            delete event;
-        }
+        delete event;
     }
     else
     {
