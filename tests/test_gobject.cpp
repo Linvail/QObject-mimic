@@ -26,6 +26,42 @@ public:
     }
 
     /**
+     * @brief Used to test overloaded slots.
+     * @param val1 First value.
+     * @param val2 Second value.
+     */
+    void onValueReceived(int val1, int val2)
+    {
+        m_lastValue = val1 + val2;
+        m_callCount++;
+        m_executedThread = GThread::currentThread();
+    }
+
+    /**
+     * @brief Slot with non-void return type.
+     * @param val Value to return.
+     * @return Value plus 1.
+     */
+    int onValueNonVoidReturn(int val)
+    {
+        m_lastValue = val;
+        m_callCount++;
+        m_executedThread = GThread::currentThread();
+        return m_lastValue;
+    }
+
+    /**
+     * @brief Slot taking const reference.
+     * @param str String value.
+     */
+    void onStringConstReference(const std::string& str)
+    {
+        m_lastString = str;
+        m_callCount++;
+        m_executedThread = GThread::currentThread();
+    }
+
+    /**
      * @brief Slot taking multiple arguments.
      * @param a Int argument.
      * @param b String argument.
@@ -846,4 +882,50 @@ TEST(GObjectTest, CallLaterMultipleCycles)
 
     EXPECT_EQ(receiver.callCount(), 2);
     EXPECT_EQ(receiver.lastValue(), 200);
+}
+
+/**
+ * @brief Tests GObject::connect with overloaded slots.
+ */
+TEST(GObjectTest, ConnectOverloadedSlot)
+{
+    GSignal<int, int>   sig;
+    GObjectTestReceiver receiver;
+
+    // onValueReceived has two overload 1-arg and 2-arg. Try if we can connect to the 2-arg one.
+    GObject::connect(sig, &receiver, &GObjectTestReceiver::onValueReceived);
+
+    sig.emit(3, 4);
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 7);
+}
+
+/**
+ * @brief Tests GObject::connect with non-void-return slot.
+ */
+TEST(GObjectTest, ConneectNonVoidReturnSlot)
+{
+    GSignal<int>        sig;
+    GObjectTestReceiver receiver;
+
+    GObject::connect(sig, &receiver, &GObjectTestReceiver::onValueNonVoidReturn);
+
+    sig.emit(42);
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastValue(), 42);
+}
+
+/**
+ * @brief Tests GObject::connect with const reference argument slot.
+ */
+TEST(GObjectTest, ConnectConstReferenceSlot)
+{
+    GSignal<std::string> sig;
+    GObjectTestReceiver  receiver;
+
+    GObject::connect(sig, &receiver, &GObjectTestReceiver::onStringConstReference);
+
+    sig.emit("Hello, GObject!");
+    EXPECT_EQ(receiver.callCount(), 1);
+    EXPECT_EQ(receiver.lastString(), "Hello, GObject!");
 }

@@ -40,6 +40,24 @@ enum ConnectionType
 using ConnectionHandle = boost::signals2::connection;
 
 /**
+ * @brief Helper identity struct for establishing a non-deduced context.
+ * @tparam T The type to wrap.
+ */
+template<typename T>
+struct Identity
+{
+    /** @brief Wrapped type alias. */
+    using type = T;
+};
+
+/**
+ * @brief Type alias for establishing a non-deduced context in template argument deduction.
+ * @tparam T Target type.
+ */
+template<typename T>
+using NonDeduced = typename Identity<T>::type;
+
+/**
  * @brief Helper type trait to detect GSignal instances.
  * @tparam T Type to inspect.
  */
