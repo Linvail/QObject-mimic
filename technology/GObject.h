@@ -129,7 +129,8 @@ public:
     std::weak_ptr<int> objectLife() const { return m_life; }
 
     /**
-     * @brief Dispatches a metacall callback to the target object's event loop based on connection type.
+     * @brief Dispatches a metacall callback to the target object's event loop based on connection
+     * type.
      * @param target Target GObject.
      * @param slot Callback function.
      * @param type Connection type. Thread-safe.
@@ -139,7 +140,11 @@ public:
                                  G::ConnectionType     type);
 
     /**
-     * @brief Connects a signal to a member function slot on a receiver object.
+     * @brief [Connect Overload 1]: Connects a signal to a non-overloaded member function slot.
+     *
+     * Why it exists: This is the primary overload for standard member functions. Because the target
+     * slot is not overloaded, the compiler can directly deduce the `Slot` type without needing
+     * explicit template resolution.
      * @tparam Signal The signal type.
      * @tparam Receiver The receiver object type (must derive from GObject).
      * @tparam Slot The member function pointer type.
@@ -157,13 +162,19 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a member function slot matching the signal signature.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 2]: Connects an overloaded void member function slot inherited from
+     * a base class.
+     *
+     * Why it exists: If the target slot is overloaded, the compiler cannot deduce `Slot` in
+     * Overload 1. When the overloaded slot is defined in a base class of the receiver, type
+     * deduction fails. This overload explicitly resolves the base class pointer so you can connect
+     * inherited overloaded methods seamlessly.
+     * @tparam SignalArgs Parameter types of the signal used to select the slot overload.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam SlotClass Class owning the member function slot.
+     * @tparam SlotClass Base class owning the member function slot.
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The member function to call when the signal is emitted.
+     * @param slot The member function pointer matching SignalArgs.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -178,13 +189,17 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a const member function slot matching the signal signature.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 3]: Connects an overloaded const void member function slot inherited
+     * from a base class.
+     *
+     * Why it exists: Similar to Overload 2, but specifically for const member functions. C++
+     * requires separate template matching for const qualifiers on member function pointers.
+     * @tparam SignalArgs Parameter types of the signal used to select the slot overload.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam SlotClass Class owning the member function slot.
+     * @tparam SlotClass Base class owning the member function slot.
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The const member function to call when the signal is emitted.
+     * @param slot The const member function pointer matching SignalArgs.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -199,14 +214,19 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a member function slot matching the signal signature.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 4]: Connects an overloaded non-void returning member function slot
+     * inherited from a base class.
+     *
+     * Why it exists: If an overloaded inherited slot returns a value (e.g. `bool`), it won\'t match
+     * the void-returning Overloads 2 and 3. This overload explicitly catches non-void slots from
+     * base classes (the return value is safely discarded during emission).
+     * @tparam SignalArgs Parameter types of the signal used to select the slot overload.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam SlotClass Class owning the member function slot.
-     * @tparam Ret Return type of the slot.
+     * @tparam SlotClass Base class owning the member function slot.
+     * @tparam Ret Return type of the slot (discarded upon invocation).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The member function to call when the signal is emitted.
+     * @param slot The member function pointer matching SignalArgs and returning Ret.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -221,14 +241,17 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a const member function slot matching the signal signature.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 5]: Connects an overloaded non-void returning const member function
+     * slot inherited from a base class.
+     *
+     * Why it exists: Similar to Overload 4, but specifically for const member functions.
+     * @tparam SignalArgs Parameter types of the signal used to select the slot overload.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam SlotClass Class owning the member function slot.
-     * @tparam Ret Return type of the slot.
+     * @tparam SlotClass Base class owning the member function slot.
+     * @tparam Ret Return type of the slot (discarded upon invocation).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The const member function to call when the signal is emitted.
+     * @param slot The const member function pointer matching SignalArgs and returning Ret.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -243,12 +266,19 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a member function slot matching the receiver type.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 6]: Connects an overloaded void member function slot defined
+     * directly on the receiver.
+     *
+     * Why it exists: If the target slot is overloaded (e.g. `onEvent()` and `onEvent(int)`), the
+     * compiler cannot deduce `Slot` in Overload 1. By using `G::NonDeduced<Receiver>`, this
+     * overload forces the compiler to use `SignalArgs` from the signal to perfectly select the
+     * right overload pointer.
+     * @tparam SignalArgs Parameter types of the signal used to deduce and select the slot overload
+     * signature.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The member function to call when the signal is emitted.
+     * @param slot The member function pointer matching SignalArgs.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -260,12 +290,16 @@ public:
         G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a const member function slot matching the receiver type.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 7]: Connects an overloaded const void member function slot defined
+     * directly on the receiver.
+     *
+     * Why it exists: Similar to Overload 6, but specifically matches const member functions.
+     * @tparam SignalArgs Parameter types of the signal used to deduce and select the slot overload
+     * signature.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The const member function to call when the signal is emitted.
+     * @param slot The const member function pointer matching SignalArgs.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -277,13 +311,19 @@ public:
         G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a member function slot matching the receiver type.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 8]: Connects an overloaded non-void returning member function slot
+     * defined directly on the receiver.
+     *
+     * Why it exists: If an overloaded slot returns a value (e.g. `bool`), it won\'t match the
+     * void-returning Overload 6. This overload ensures connecting an overloaded method that returns
+     * `Ret` compiles successfully.
+     * @tparam SignalArgs Parameter types of the signal used to deduce and select the slot overload
+     * signature.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam Ret Return type of the slot.
+     * @tparam Ret Return type of the slot (discarded upon invocation).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The member function to call when the signal is emitted.
+     * @param slot The member function pointer matching SignalArgs and returning Ret.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -297,13 +337,17 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a GSignal to a const member function slot matching the receiver type.
-     * @tparam SignalArgs Parameter types of the signal.
+     * @brief [Connect Overload 9]: Connects an overloaded non-void returning const member function
+     * slot defined directly on the receiver.
+     *
+     * Why it exists: Similar to Overload 8, but specifically for const member functions.
+     * @tparam SignalArgs Parameter types of the signal used to deduce and select the slot overload
+     * signature.
      * @tparam Receiver Receiver object type (must derive from GObject).
-     * @tparam Ret Return type of the slot.
+     * @tparam Ret Return type of the slot (discarded upon invocation).
      * @param signal The signal to connect.
      * @param receiver The object receiving the signal.
-     * @param slot The const member function to call when the signal is emitted.
+     * @param slot The const member function pointer matching SignalArgs and returning Ret.
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -317,12 +361,16 @@ public:
             G::ConnectionType type = G::AutoConnection);
 
     /**
-     * @brief Connects a signal to a general functor or lambda slot under a receiver context.
+     * @brief [Connect Overload 10]: Connects a signal to a free function, lambda, or general
+     * functor slot.
+     *
+     * Why it exists: This overload captures anything that is not a member function. It binds the
+     * functor\'s lifetime and thread affinity to the provided `context` object.
      * @tparam Signal The signal type.
      * @tparam Functor The slot functor type.
      * @param signal The signal to connect.
-     * @param context The GObject context that defines the target thread and lifetime.
-     * @param slot The slot functor (lambda, functor, std::function, etc.).
+     * @param context The GObject context defining thread affinity and lifetime.
+     * @param slot The slot functor (lambda, std::function, etc.).
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
@@ -341,7 +389,11 @@ public:
     static void disconnect(const G::ConnectionHandle& handle);
 
     /**
-     * @brief Schedules a member function slot to run deferred in the receiver's event loop with deduplication.
+     * @brief [CallLater Overload 1]: Schedules a non-overloaded member function slot to run
+     * deferred.
+     *
+     * Why it exists: This is the primary overload for standard member functions. Because the target
+     * slot is not overloaded, the compiler can directly deduce the `Slot` type.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam Slot Member function pointer type.
      * @tparam Args Argument types.
@@ -356,7 +408,12 @@ public:
     callLater(Receiver* receiver, Slot slot, Args&&... args);
 
     /**
-     * @brief Schedules a void member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 2]: Schedules an overloaded void member function slot inherited
+     * from a base class.
+     *
+     * Why it exists: If the target slot is overloaded and inherited from a base class, type
+     * deduction fails. This overload explicitly resolves the base class pointer so you can defer
+     * execution of inherited overloaded methods.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam SlotClass Class owning the member function slot.
      * @tparam Args Argument types.
@@ -372,7 +429,10 @@ public:
     callLater(Receiver* receiver, void (SlotClass::*slot)(G::NonDeduced<Args>...), Args&&... args);
 
     /**
-     * @brief Schedules a void const member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 3]: Schedules an overloaded const void member function slot
+     * inherited from a base class.
+     *
+     * Why it exists: Similar to Overload 2, but specifically for const member functions.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam SlotClass Class owning the member function slot.
      * @tparam Args Argument types.
@@ -390,7 +450,12 @@ public:
               Args&&... args);
 
     /**
-     * @brief Schedules a member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 4]: Schedules an overloaded non-void returning member function
+     * slot inherited from a base class.
+     *
+     * Why it exists: If an overloaded inherited slot returns a value, it won\'t match the
+     * void-returning overloads. This overload explicitly catches non-void slots from base classes
+     * (the return value is safely discarded upon invocation).
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam SlotClass Class owning the member function slot.
      * @tparam Ret Return type of the slot.
@@ -407,7 +472,10 @@ public:
     callLater(Receiver* receiver, Ret (SlotClass::*slot)(G::NonDeduced<Args>...), Args&&... args);
 
     /**
-     * @brief Schedules a const member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 5]: Schedules an overloaded non-void returning const member
+     * function slot inherited from a base class.
+     *
+     * Why it exists: Similar to Overload 4, but specifically for const member functions.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam SlotClass Class owning the member function slot.
      * @tparam Ret Return type of the slot.
@@ -426,7 +494,12 @@ public:
               Args&&... args);
 
     /**
-     * @brief Schedules a void member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 6]: Schedules an overloaded void member function slot defined
+     * directly on the receiver.
+     *
+     * Why it exists: If the target slot is overloaded, the compiler cannot deduce `Slot` in
+     * Overload 1. Using `G::NonDeduced<Receiver>`, this overload forces the compiler to use the
+     * passed `args` types to select the right overload.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam Args Argument types.
      * @param receiver Target object receiving the call.
@@ -440,7 +513,10 @@ public:
         Args&&... args);
 
     /**
-     * @brief Schedules a void const member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 7]: Schedules an overloaded const void member function slot
+     * defined directly on the receiver.
+     *
+     * Why it exists: Similar to Overload 6, but specifically for const member functions.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam Args Argument types.
      * @param receiver Target object receiving the call.
@@ -454,7 +530,12 @@ public:
         Args&&... args);
 
     /**
-     * @brief Schedules a member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 8]: Schedules an overloaded non-void returning member function
+     * slot defined directly on the receiver.
+     *
+     * Why it exists: If an overloaded slot returns a value, it won\'t match void-returning
+     * Overload 6. This ensures deferring overloaded methods that return `Ret` compiles
+     * successfully.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam Ret Return type of the slot.
      * @tparam Args Argument types.
@@ -471,7 +552,10 @@ public:
               Args&&... args);
 
     /**
-     * @brief Schedules a const member function slot matching argument types to run deferred in the receiver's event loop.
+     * @brief [CallLater Overload 9]: Schedules an overloaded non-void returning const member
+     * function slot defined directly on the receiver.
+     *
+     * Why it exists: Similar to Overload 8, but specifically for const member functions.
      * @tparam Receiver Receiver object type (must derive from GObject).
      * @tparam Ret Return type of the slot.
      * @tparam Args Argument types.
@@ -488,7 +572,10 @@ public:
               Args&&... args);
 
     /**
-     * @brief Schedules a static or free function to run deferred in the context's event loop with deduplication.
+     * @brief [CallLater Overload 10]: Schedules a static or free function to run deferred.
+     *
+     * Why it exists: This overload captures static and free functions. It binds the function\'s
+     * execution to the provided `context` object\'s thread loop.
      * @tparam Func Function pointer type.
      * @tparam Args Argument types.
      * @param context Target GObject defining thread affinity and lifetime.
@@ -502,7 +589,10 @@ public:
     callLater(GObject* context, Func func, Args&&... args);
 
     /**
-     * @brief Schedules a GSignal emission to run deferred in the context's event loop with deduplication.
+     * @brief [CallLater Overload 11]: Schedules a GSignal emission to run deferred.
+     *
+     * Why it exists: Specifically allows `callLater` to queue a signal emission
+     * (`signal.emit(args...)`) on a target thread instead of executing a function.
      * @tparam SignalArgs Signal parameter types.
      * @tparam Args Argument types.
      * @param context Target GObject defining thread affinity and lifetime.
@@ -513,7 +603,12 @@ public:
     static void callLater(GObject* context, GSignal<SignalArgs...>& signal, Args&&... args);
 
     /**
-     * @brief Fallback overload that produces a compile-time error if a lambda or unsupported functor is passed.
+     * @brief [CallLater Overload 12]: Fallback overload producing a compile-time error for
+     * unsupported targets (e.g., lambdas).
+     *
+     * Why it exists: `callLater` relies on hashing the target address for deduplication. Lambdas
+     * cannot be reliably hashed, so this overload intentionally catches lambdas and triggers a
+     * `static_assert` or SFINAE error.
      * @tparam Target Callable target type.
      * @tparam Args Argument types.
      * @param context Target GObject context.
