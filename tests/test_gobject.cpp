@@ -7,6 +7,7 @@
 #include "GEventDispatcherDefault.h"
 #include "GTimer.h"
 #include <string>
+#include <future>
 
 /**
  * @brief Helper test receiver class for verifying GObject slot invocations.
@@ -573,6 +574,28 @@ TEST(GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled)
         std::this_thread::yield();
     }
 
+    std::promise<void> blockEnteredPromise;
+    std::promise<void> blockReleasePromise;
+    auto blockEnteredFuture = blockEnteredPromise.get_future();
+    auto blockReleaseFuture = blockReleasePromise.get_future();
+
+    GObject dummyContext;
+    dummyContext.moveToThread(&workerThread);
+
+    GSignal<> blockSig;
+    GObject::connect(
+        blockSig,
+        &dummyContext,
+        [&blockEnteredPromise, &blockReleaseFuture]()
+        {
+            blockEnteredPromise.set_value();
+            blockReleaseFuture.wait();
+        },
+        G::QueuedConnection);
+
+    blockSig.emit();
+    blockEnteredFuture.get();
+
     GSignal<int> sig;
 
     {
@@ -586,8 +609,9 @@ TEST(GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled)
         // Receiver is deleted here before workerThread event loop processes the queued event
     }
 
-    GObject dummyContext;
-    dummyContext.moveToThread(&workerThread);
+    blockReleasePromise.set_value();
+
+    // Make another event to make sure the `emit(55)` is processed before the thread terminates.
     GSignal<> quitSig;
     GObject::connect(
         quitSig, &dummyContext, [&workerThread]() { workerThread.quit(); }, G::QueuedConnection);
@@ -613,6 +637,28 @@ TEST(GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled)
         std::this_thread::yield();
     }
 
+    std::promise<void> blockEnteredPromise;
+    std::promise<void> blockReleasePromise;
+    auto blockEnteredFuture = blockEnteredPromise.get_future();
+    auto blockReleaseFuture = blockReleasePromise.get_future();
+
+    GObject dummyContext;
+    dummyContext.moveToThread(&workerThread);
+
+    GSignal<> blockSig;
+    GObject::connect(
+        blockSig,
+        &dummyContext,
+        [&blockEnteredPromise, &blockReleaseFuture]()
+        {
+            blockEnteredPromise.set_value();
+            blockReleaseFuture.wait();
+        },
+        G::QueuedConnection);
+
+    blockSig.emit();
+    blockEnteredFuture.get();
+
     GSignal<int> sig;
     bool         lambdaExecuted = false;
 
@@ -627,8 +673,9 @@ TEST(GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled)
         // context goes out of scope and is destroyed here
     }
 
-    GObject dummyContext;
-    dummyContext.moveToThread(&workerThread);
+    blockReleasePromise.set_value();
+
+    // Make another event to make sure the `emit(77)` is processed before the thread terminates.
     GSignal<> quitSig;
     GObject::connect(
         quitSig, &dummyContext, [&workerThread]() { workerThread.quit(); }, G::QueuedConnection);
