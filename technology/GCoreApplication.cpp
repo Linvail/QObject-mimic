@@ -10,9 +10,11 @@
 
 GCoreApplication* GCoreApplication::s_instance = nullptr;
 
-GCoreApplication::GCoreApplication(int& argc, char** argv) : GObject(nullptr) {
-    (void)argc;
-    (void)argv;
+GCoreApplication::GCoreApplication(int& argc, char** argv)
+: GObject(nullptr)
+{
+    (void) argc;
+    (void) argv;
     s_instance = this;
 
 #if defined(_WIN32)
@@ -25,49 +27,58 @@ GCoreApplication::GCoreApplication(int& argc, char** argv) : GObject(nullptr) {
     m_mainThread = std::make_unique<GThread>();
 
     m_mainThread->m_dispatcher = m_dispatcher.get();
-    GThread::s_currentThread = m_mainThread.get();
+    GThread::s_currentThread   = m_mainThread.get();
 
     this->moveToThread(m_mainThread.get());
 }
 
-GCoreApplication::~GCoreApplication() {
+GCoreApplication::~GCoreApplication()
+{
     this->moveToThread(nullptr);
     m_mainThread->m_dispatcher = nullptr;
-    GThread::s_currentThread = nullptr;
-    s_instance = nullptr;
+    GThread::s_currentThread   = nullptr;
+    s_instance                 = nullptr;
 }
 
-GCoreApplication* GCoreApplication::instance() {
-    return s_instance;
-}
+GCoreApplication* GCoreApplication::instance() { return s_instance; }
 
-void GCoreApplication::postEvent(GObject* receiver, GEvent* event) {
-    if (!receiver) {
+void GCoreApplication::postEvent(GObject* receiver, GEvent* event)
+{
+    if (!receiver)
+    {
         delete event;
         return;
     }
 
     GThread* thread = receiver->thread();
-    if (thread && thread->eventDispatcher()) {
+    if (thread && thread->eventDispatcher())
+    {
         thread->eventDispatcher()->postEvent(receiver, event);
-    } else {
+    }
+    else
+    {
         delete event;
     }
 }
 
-int GCoreApplication::exec() {
+int GCoreApplication::exec()
+{
     m_exiting.store(false);
-    if (m_dispatcher) {
-        while (!m_exiting.load()) {
+    if (m_dispatcher)
+    {
+        while (!m_exiting.load())
+        {
             m_dispatcher->processEvents();
         }
     }
     return 0;
 }
 
-void GCoreApplication::quit() {
+void GCoreApplication::quit()
+{
     m_exiting.store(true);
-    if (m_dispatcher) {
+    if (m_dispatcher)
+    {
         m_dispatcher->interrupt();
         m_dispatcher->wakeUp();
     }

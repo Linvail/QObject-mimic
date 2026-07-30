@@ -15,7 +15,8 @@ class GAbstractEventDispatcher;
 /**
  * @brief Manages a platform execution thread with an event loop.
  */
-class GThread : public GObject {
+class GThread : public GObject
+{
 public:
     /**
      * @brief Constructs a new thread object.
@@ -99,7 +100,7 @@ public:
      * @param args Arguments to pass.
      * @return Pointer to the newly created GThread. Thread-safe.
      */
-    template <typename Function, typename... Args>
+    template<typename Function, typename... Args>
     static GThread* create(Function&& f, Args&&... args);
 
 protected:
@@ -115,33 +116,42 @@ protected:
     int exec();
 
 private:
-    std::unique_ptr<std::thread> m_thread;
-    std::atomic<GAbstractEventDispatcher*> m_dispatcher{nullptr};
-    bool m_ownsDispatcher{false};
-    std::atomic<bool> m_running{false};
-    std::atomic<bool> m_finished{false};
-    std::atomic<bool> m_exiting{false};
-    std::atomic<int> m_exitCode{0};
-    mutable std::mutex m_waitMutex;
-    std::condition_variable m_waitCv;
+    std::unique_ptr<std::thread>           m_thread;
+    std::atomic<GAbstractEventDispatcher*> m_dispatcher{ nullptr };
+    bool                                   m_ownsDispatcher{ false };
+    std::atomic<bool>                      m_running{ false };
+    std::atomic<bool>                      m_finished{ false };
+    std::atomic<bool>                      m_exiting{ false };
+    std::atomic<int>                       m_exitCode{ 0 };
+    mutable std::mutex                     m_waitMutex;
+    std::condition_variable                m_waitCv;
 
     static thread_local GThread* s_currentThread;
     friend class GCoreApplication;
 };
 
-template <typename Function, typename... Args>
-GThread* GThread::create(Function&& f, Args&&... args) {
+template<typename Function, typename... Args>
+GThread* GThread::create(Function&& f, Args&&... args)
+{
     auto task = std::bind(std::forward<Function>(f), std::forward<Args>(args)...);
 
-    class GFuncThread : public GThread {
+    class GFuncThread : public GThread
+    {
     public:
-        GFuncThread(std::function<void()> fn) : m_fn(std::move(fn)) {}
+        GFuncThread(std::function<void()> fn)
+        : m_fn(std::move(fn))
+        {
+        }
+
     protected:
-        virtual void run() override {
-            if (m_fn) {
+        virtual void run() override
+        {
+            if (m_fn)
+            {
                 m_fn();
             }
         }
+
     private:
         std::function<void()> m_fn;
     };

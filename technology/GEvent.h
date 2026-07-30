@@ -6,24 +6,29 @@
 /**
  * @brief Base class for all events in the event loop.
  */
-class GEvent {
+class GEvent
+{
 public:
     /**
      * @brief The core event types.
      */
-    enum Type {
-        None = 0,
-        MetaCall = 1,
-        Timer = 2,
+    enum Type
+    {
+        None           = 0,
+        MetaCall       = 1,
+        Timer          = 2,
         DeferredDelete = 3,
-        User = 1000
+        User           = 1000
     };
 
     /**
      * @brief Constructs an event of the specified type.
      * @param type The type of the event.
      */
-    GEvent(Type type) : m_type(type) {}
+    GEvent(Type type)
+    : m_type(type)
+    {
+    }
 
     /**
      * @brief Virtual destructor.
@@ -43,20 +48,26 @@ private:
 /**
  * @brief An event that encapsulates a function call across threads.
  */
-class GMetaCallEvent : public GEvent {
+class GMetaCallEvent : public GEvent
+{
 public:
     /**
      * @brief Constructs a metacall event with the given callback.
      * @param callback The function to execute.
      */
     GMetaCallEvent(std::function<void()> callback)
-        : GEvent(MetaCall), m_callback(std::move(callback)) {}
+    : GEvent(MetaCall)
+    , m_callback(std::move(callback))
+    {
+    }
 
     /**
      * @brief Executes the stored function call.
      */
-    void placeMetaCall() const {
-        if (m_callback) {
+    void placeMetaCall() const
+    {
+        if (m_callback)
+        {
             m_callback();
         }
     }
@@ -68,14 +79,18 @@ private:
 /**
  * @brief Event sent when a timer expires.
  */
-class GTimerEvent : public GEvent {
+class GTimerEvent : public GEvent
+{
 public:
     /**
      * @brief Constructs a timer event with a given timer ID.
      * @param timerId The unique identifier of the expired timer.
      */
     GTimerEvent(int timerId)
-        : GEvent(Timer), m_timerId(timerId) {}
+    : GEvent(Timer)
+    , m_timerId(timerId)
+    {
+    }
 
     /**
      * @brief Gets the timer ID associated with this event.
@@ -90,10 +105,14 @@ private:
 /**
  * @brief Event sent to delete an object asynchronously.
  */
-class GDeferredDeleteEvent : public GEvent {
+class GDeferredDeleteEvent : public GEvent
+{
 public:
     /**
      * @brief Constructs a deferred delete event.
      */
-    GDeferredDeleteEvent() : GEvent(DeferredDelete) {}
+    GDeferredDeleteEvent()
+    : GEvent(DeferredDelete)
+    {
+    }
 };

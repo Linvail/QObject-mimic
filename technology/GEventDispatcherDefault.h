@@ -16,7 +16,8 @@ class GObject;
  *
  * All public methods are thread-safe and can be invoked safely across threads.
  */
-class GEventDispatcherDefault : public GAbstractEventDispatcher {
+class GEventDispatcherDefault : public GAbstractEventDispatcher
+{
 public:
     /**
      * @brief Constructs a new default event dispatcher.
@@ -87,21 +88,23 @@ public:
     virtual void interrupt() override;
 
 private:
-    struct EventPair {
+    struct EventPair
+    {
         GObject* receiver;
-        GEvent* event;
+        GEvent*  event;
     };
 
-    struct TimerData {
-        int timerId;
-        int intervalMs;
-        GObject* receiver;
+    struct TimerData
+    {
+        int                                   timerId;
+        int                                   intervalMs;
+        GObject*                              receiver;
         std::chrono::steady_clock::time_point nextFire;
     };
 
-    std::deque<EventPair> m_eventQueue;
-    std::vector<TimerData> m_timers;
-    std::mutex m_mutex;
+    std::deque<EventPair>   m_eventQueue;
+    std::vector<TimerData>  m_timers;
+    std::mutex              m_mutex;
     std::condition_variable m_cv;
-    std::atomic<bool> m_interrupt{false};
+    std::atomic<bool>       m_interrupt{ false };
 };

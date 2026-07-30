@@ -6,7 +6,8 @@
 /**
  * @brief High-level timer class providing repetitive and single-shot timers.
  */
-class GTimer : public GObject {
+class GTimer : public GObject
+{
 public:
     /**
      * @brief Constructs a timer with optional parent.
@@ -82,7 +83,7 @@ public:
      * @param msec Delay in milliseconds.
      * @param functor Slot function to execute. Thread-safe.
      */
-    template <typename Functor>
+    template<typename Functor>
     static void singleShot(int msec, Functor functor);
 
     /**
@@ -92,7 +93,7 @@ public:
      * @param context Target context GObject.
      * @param functor Slot function to execute. Thread-safe.
      */
-    template <typename Functor>
+    template<typename Functor>
     static void singleShot(int msec, const GObject* context, Functor functor);
 
     /**
@@ -103,7 +104,7 @@ public:
      * @param receiver Target receiver object.
      * @param method Member function pointer to execute. Thread-safe.
      */
-    template <typename Receiver, typename MemberFunc>
+    template<typename Receiver, typename MemberFunc>
     static void singleShot(int msec, const Receiver* receiver, MemberFunc method);
 
 protected:
@@ -114,67 +115,85 @@ protected:
     virtual void timerEvent(GTimerEvent* event) override;
 
 private:
-    int m_interval{0};
-    int m_timerId{-1};
-    bool m_singleShot{false};
-    bool m_active{false};
+    int  m_interval{ 0 };
+    int  m_timerId{ -1 };
+    bool m_singleShot{ false };
+    bool m_active{ false };
 };
 
-template <typename Functor>
-void GTimer::singleShot(int msec, Functor functor) {
-    class GSingleShotHelper : public GObject {
+template<typename Functor>
+void GTimer::singleShot(int msec, Functor functor)
+{
+    class GSingleShotHelper : public GObject
+    {
     public:
-        GSingleShotHelper(int ms, Functor fn) : m_fn(std::move(fn)) {
+        GSingleShotHelper(int ms, Functor fn)
+        : m_fn(std::move(fn))
+        {
             m_id = startTimer(ms);
         }
+
     protected:
-        virtual void timerEvent(GTimerEvent* event) override {
-            if (event->timerId() == m_id) {
+        virtual void timerEvent(GTimerEvent* event) override
+        {
+            if (event->timerId() == m_id)
+            {
                 m_fn();
                 deleteLater();
             }
         }
+
     private:
         Functor m_fn;
-        int m_id{-1};
+        int     m_id{ -1 };
     };
     new GSingleShotHelper(msec, functor);
 }
 
-template <typename Functor>
-void GTimer::singleShot(int msec, const GObject* context, Functor functor) {
-    if (!context) {
+template<typename Functor>
+void GTimer::singleShot(int msec, const GObject* context, Functor functor)
+{
+    if (!context)
+    {
         return;
     }
-    class GSingleShotContextHelper : public GObject {
+    class GSingleShotContextHelper : public GObject
+    {
     public:
-        GSingleShotContextHelper(GObject* ctx, int ms, Functor fn) : m_fn(std::move(fn)) {
-            if (ctx) {
+        GSingleShotContextHelper(GObject* ctx, int ms, Functor fn)
+        : m_fn(std::move(fn))
+        {
+            if (ctx)
+            {
                 this->moveToThread(ctx->thread());
             }
             m_id = startTimer(ms);
         }
+
     protected:
-        virtual void timerEvent(GTimerEvent* event) override {
-            if (event->timerId() == m_id) {
+        virtual void timerEvent(GTimerEvent* event) override
+        {
+            if (event->timerId() == m_id)
+            {
                 m_fn();
                 deleteLater();
             }
         }
+
     private:
         Functor m_fn;
-        int m_id{-1};
+        int     m_id{ -1 };
     };
     new GSingleShotContextHelper(const_cast<GObject*>(context), msec, functor);
 }
 
-template <typename Receiver, typename MemberFunc>
-void GTimer::singleShot(int msec, const Receiver* receiver, MemberFunc method) {
-    if (!receiver) {
+template<typename Receiver, typename MemberFunc>
+void GTimer::singleShot(int msec, const Receiver* receiver, MemberFunc method)
+{
+    if (!receiver)
+    {
         return;
     }
-    auto bound = [receiver, method]() {
-        (const_cast<Receiver*>(receiver)->*method)();
-    };
+    auto bound = [receiver, method]() { (const_cast<Receiver*>(receiver)->*method)(); };
     singleShot(msec, static_cast<const GObject*>(receiver), bound);
 }

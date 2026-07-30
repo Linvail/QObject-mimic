@@ -8,7 +8,8 @@
  * Inherits default cross-platform behavior and allows Win32-specific event loop handling.
  * All public methods are thread-safe.
  */
-class GEventDispatcherWin32 : public GEventDispatcherDefault {
+class GEventDispatcherWin32 : public GEventDispatcherDefault
+{
 public:
     /**
      * @brief Constructs a new GEventDispatcherWin32 instance.

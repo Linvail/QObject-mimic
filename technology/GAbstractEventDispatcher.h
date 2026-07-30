@@ -13,7 +13,8 @@ class GObject;
  *
  * All public methods must be thread-safe as they can be invoked across threads.
  */
-class GAbstractEventDispatcher {
+class GAbstractEventDispatcher
+{
 public:
     /**
      * @brief Constructs an event dispatcher.

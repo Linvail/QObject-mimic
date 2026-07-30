@@ -11,7 +11,8 @@ class GEvent;
 /**
  * @brief Singleton class that manages the application's control flow and main event loop.
  */
-class GCoreApplication : public GObject {
+class GCoreApplication : public GObject
+{
 public:
     /**
      * @brief Constructs the application object.
@@ -52,7 +53,7 @@ public:
 private:
     static GCoreApplication* s_instance;
 
-    std::unique_ptr<GThread> m_mainThread;
+    std::unique_ptr<GThread>                  m_mainThread;
     std::unique_ptr<GAbstractEventDispatcher> m_dispatcher;
-    std::atomic<bool> m_exiting{false};
+    std::atomic<bool>                         m_exiting{ false };
 };
