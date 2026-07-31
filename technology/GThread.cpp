@@ -27,6 +27,14 @@ void GThread::start()
         return;
     }
 
+    // If a previous run finished but the caller never called wait(), m_thread can still hold a
+    // joinable std::thread. Overwriting m_thread below would destroy that std::thread while it
+    // is still joinable, which calls std::terminate(). Join it first.
+    if (m_thread && m_thread->joinable())
+    {
+        m_thread->join();
+    }
+
     m_running.store(true);
     m_finished.store(false);
     m_exiting.store(false);

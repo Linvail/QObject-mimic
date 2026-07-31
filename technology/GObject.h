@@ -23,7 +23,7 @@ class GAbstractEventDispatcher;
 struct GThreadData
 {
     std::atomic<GAbstractEventDispatcher*> dispatcher{ nullptr };
-    bool                                   ownsDispatcher{ false };
+    std::atomic<bool>                      ownsDispatcher{ false };
 };
 
 /**
@@ -702,6 +702,7 @@ private:
 
     std::shared_ptr<int>               m_life;
     std::shared_ptr<GThreadData>       m_threadData;
+    mutable std::mutex                 m_threadDataMutex;
     std::atomic<GThread*>              m_thread{ nullptr };
     GObject*                           m_parent;
     std::string                        m_objectName;

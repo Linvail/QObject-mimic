@@ -2,6 +2,7 @@
 #include "GEvent.h"
 #include "GObject.h"
 #include <algorithm>
+#include <unordered_set>
 
 GEventDispatcherDefault::GEventDispatcherDefault() = default;
 
@@ -64,11 +65,27 @@ bool GEventDispatcherDefault::processEvents()
                 }
             }
 
-            m_cv.wait_for(lock, maxWait, [this] { return !m_eventQueue.empty() || m_interrupt; });
+            // Clear the change flag right before waiting, still holding m_mutex, so any
+            // registerTimer()/unregisterTimer() call that runs concurrently is guaranteed to
+            // either land before this point (already reflected in maxWait above) or after
+            // (blocked on m_mutex until we release it inside wait_for, then setting the flag and
+            // notifying) -- there is no window where a change can be lost.
+            m_timersChanged = false;
+            m_cv.wait_for(lock,
+                          maxWait,
+                          [this]
+                          { return !m_eventQueue.empty() || m_interrupt || m_timersChanged; });
         }
 
         if (m_interrupt)
         {
+            // timerEventsToProcess may already hold heap-allocated GTimerEvent objects collected
+            // above; they were never handed off to the dispatch loop below, so free them here to
+            // avoid leaking them.
+            for (auto& ep : timerEventsToProcess)
+            {
+                delete ep.event;
+            }
             return false;
         }
 
@@ -82,26 +99,54 @@ bool GEventDispatcherDefault::processEvents()
 
     bool processedAny = false;
 
+    // Tracks receivers that were deleted via a GDeferredDeleteEvent processed earlier in this
+    // same batch. Both eventsToProcess and timerEventsToProcess are snapshots drained/collected
+    // before dispatch begins, so removeEventsForReceiver() (called from ~GObject()) cannot strip
+    // a receiver's remaining entries out of these local vectors -- without this guard, a later
+    // entry for the same (now-deleted) receiver would be a use-after-free.
+    std::unordered_set<GObject*> deletedReceivers;
+
     // Dispatch queued events
     for (const auto& ep : eventsToProcess)
     {
-        if (ep.receiver && ep.event)
+        if (!ep.receiver || !ep.event)
         {
-            ep.receiver->event(ep.event);
             delete ep.event;
-            processedAny = true;
+            continue;
         }
+        if (deletedReceivers.count(ep.receiver))
+        {
+            delete ep.event;
+            continue;
+        }
+
+        const bool isDeferredDelete = (ep.event->type() == GEvent::DeferredDelete);
+        ep.receiver->event(ep.event);
+        if (isDeferredDelete)
+        {
+            deletedReceivers.insert(ep.receiver);
+        }
+        delete ep.event;
+        processedAny = true;
     }
 
     // Dispatch timer events
     for (const auto& ep : timerEventsToProcess)
     {
-        if (ep.receiver && ep.event)
+        if (!ep.receiver || !ep.event)
         {
-            ep.receiver->event(ep.event);
             delete ep.event;
-            processedAny = true;
+            continue;
         }
+        if (deletedReceivers.count(ep.receiver))
+        {
+            delete ep.event;
+            continue;
+        }
+
+        ep.receiver->event(ep.event);
+        delete ep.event;
+        processedAny = true;
     }
 
     return processedAny;
@@ -126,12 +171,14 @@ void GEventDispatcherDefault::registerTimer(int timerId, int interval, GObject* 
     {
         if (t.timerId == timerId)
         {
-            t = td;
+            t             = td;
+            m_timersChanged = true;
             m_cv.notify_all();
             return;
         }
     }
     m_timers.push_back(td);
+    m_timersChanged = true;
     m_cv.notify_all();
 }
 
@@ -144,6 +191,8 @@ bool GEventDispatcherDefault::unregisterTimer(int timerId)
     if (it != m_timers.end())
     {
         m_timers.erase(it, m_timers.end());
+        m_timersChanged = true;
+        m_cv.notify_all();
         return true;
     }
     return false;

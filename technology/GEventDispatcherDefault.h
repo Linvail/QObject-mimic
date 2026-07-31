@@ -108,6 +108,10 @@ private:
     std::mutex              m_mutex;
     std::condition_variable m_cv;
     std::atomic<bool>       m_interrupt{ false };
+    // Set (under m_mutex) whenever a timer is registered or unregistered, so a processEvents()
+    // call currently sleeping in wait_for() re-evaluates its wait deadline instead of sleeping
+    // for the stale duration computed before the change.
+    bool                    m_timersChanged{ false };
 };
 
 #endif // GEVENTDISPATCHERDEFAULT_H

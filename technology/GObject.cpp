@@ -27,12 +27,21 @@ GObject::GObject(GObject* parent)
     m_thread.store(current);
     if (current)
     {
-        m_threadData = current->threadData();
+        std::shared_ptr<GThreadData> data = current->threadData();
+        std::lock_guard<std::mutex>  lock(m_threadDataMutex);
+        m_threadData = std::move(data);
     }
 }
 
 GObject::~GObject()
 {
+    // Invalidate the life token first. connect()/callLater() wrappers running on other threads
+    // check objectLife().lock() before posting a call to this object; resetting m_life up front
+    // shrinks the window in which such a wrapper can still observe this object as "alive" to
+    // the check-then-post race itself, instead of the whole destructor body (which below runs
+    // arbitrary user cleanup-callback code).
+    m_life.reset();
+
     {
         std::lock_guard<std::mutex> lock(m_cleanupMutex);
         for (auto& cb : m_cleanupCallbacks)
@@ -56,15 +65,18 @@ GObject::~GObject()
         }
     }
 
-    if (m_threadData)
+    std::shared_ptr<GThreadData> threadDataCopy;
     {
-        if (GAbstractEventDispatcher* dispatcher = m_threadData->dispatcher.load())
+        std::lock_guard<std::mutex> lock(m_threadDataMutex);
+        threadDataCopy = m_threadData;
+    }
+    if (threadDataCopy)
+    {
+        if (GAbstractEventDispatcher* dispatcher = threadDataCopy->dispatcher.load())
         {
             dispatcher->removeEventsForReceiver(this);
         }
     }
-
-    m_life.reset();
 }
 
 void GObject::scheduleCallLater(GObject*              context,
@@ -129,12 +141,22 @@ void GObject::scheduleCallLater(GObject*              context,
 
 GThread* GObject::thread() const { return m_thread.load(); }
 
-std::shared_ptr<GThreadData> GObject::threadData() const { return m_threadData; }
+std::shared_ptr<GThreadData> GObject::threadData() const
+{
+    std::lock_guard<std::mutex> lock(m_threadDataMutex);
+    return m_threadData;
+}
 
 void GObject::moveToThread(GThread* thread)
 {
+    // Resolve the new thread's data before taking our own lock, and store it under the lock in
+    // one atomic-looking step so concurrent readers of threadData() never see a half-updated or
+    // torn shared_ptr.
+    std::shared_ptr<GThreadData> newData = thread ? thread->threadData() : nullptr;
     m_thread.store(thread);
-    m_threadData = thread ? thread->threadData() : nullptr;
+
+    std::lock_guard<std::mutex> lock(m_threadDataMutex);
+    m_threadData = std::move(newData);
 }
 
 std::string GObject::objectName() const
@@ -152,9 +174,9 @@ void GObject::setObjectName(const std::string& name)
 void GObject::deleteLater()
 {
     auto* event = new GDeferredDeleteEvent();
-    if (m_threadData)
+    if (auto tData = threadData())
     {
-        if (auto disp = m_threadData->dispatcher.load())
+        if (auto disp = tData->dispatcher.load())
         {
             disp->postEvent(this, static_cast<GEvent*>(event));
             return;
@@ -247,9 +269,9 @@ void GObject::timerEvent(GTimerEvent* event) { (void) event; }
 int GObject::startTimer(int interval)
 {
     int timerId = s_nextTimerId.fetch_add(1);
-    if (m_threadData)
+    if (auto tData = threadData())
     {
-        if (auto disp = m_threadData->dispatcher.load())
+        if (auto disp = tData->dispatcher.load())
         {
             disp->registerTimer(timerId, interval, this);
             return timerId;
@@ -260,9 +282,9 @@ int GObject::startTimer(int interval)
 
 void GObject::killTimer(int id)
 {
-    if (m_threadData)
+    if (auto tData = threadData())
     {
-        if (auto disp = m_threadData->dispatcher.load())
+        if (auto disp = tData->dispatcher.load())
         {
             disp->unregisterTimer(id);
         }
