@@ -5,7 +5,8 @@ def build(bld):
         "main.cpp",
         "test_gobject.cpp",
         "test_gthread.cpp",
-        "test_gtimer.cpp"
+        "test_gtimer.cpp",
+        "test_defect_regressions.cpp"
     ]
     kw["includes"] = ["."]
     kw["use"] = ["GQT", "gtest"]
