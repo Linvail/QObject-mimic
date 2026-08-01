@@ -34,13 +34,6 @@ public:
     static GCoreApplication* instance();
 
     /**
-     * @brief Thread-safely posts an event to a receiver's thread event queue.
-     * @param receiver The target object.
-     * @param event The event to dispatch. Thread-safe.
-     */
-    static void postEvent(GObject* receiver, GEvent* event);
-
-    /**
      * @brief Enters the main event loop and waits until quit() is called.
      * @return The exit code.
      */

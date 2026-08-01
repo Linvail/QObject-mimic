@@ -36,6 +36,28 @@ public:
     virtual bool processEvents() = 0;
 
     /**
+     * @brief Wakes up the event loop if it is waiting for events.
+     *
+     * Note: Thread-safe.
+     */
+    virtual void wakeUp() = 0;
+
+    /**
+     * @brief Interrupts the event loop execution.
+     *
+     * Note: Thread-safe.
+     */
+    virtual void interrupt() = 0;
+
+protected:
+    // The methods below all target a *specific* receiver object, so exposing them publicly would
+    // let any caller inject events or timers on another object's behalf. They exist solely for
+    // GObject's own internals (deleteLater(), startTimer()/killTimer(), dispatchMetaCall(), and
+    // ~GObject()), which reach them through the friend declaration at the end of this class.
+    // processEvents()/wakeUp()/interrupt() stay public: they drive or stop the loop as a whole
+    // and cannot be aimed at a particular object.
+
+    /**
      * @brief Registers a timer for the given object.
      * @param timerId Unique timer identifier.
      * @param interval Interval in milliseconds.
@@ -71,19 +93,7 @@ public:
      */
     virtual void removeEventsForReceiver(GObject* receiver) = 0;
 
-    /**
-     * @brief Wakes up the event loop if it is waiting for events.
-     *
-     * Note: Thread-safe.
-     */
-    virtual void wakeUp() = 0;
-
-    /**
-     * @brief Interrupts the event loop execution.
-     *
-     * Note: Thread-safe.
-     */
-    virtual void interrupt() = 0;
+    friend class GObject;
 };
 
 #endif // GABSTRACTEVENTDISPATCHER_H

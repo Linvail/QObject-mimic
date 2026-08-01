@@ -42,25 +42,6 @@ GCoreApplication::~GCoreApplication()
 
 GCoreApplication* GCoreApplication::instance() { return s_instance; }
 
-void GCoreApplication::postEvent(GObject* receiver, GEvent* event)
-{
-    if (!receiver)
-    {
-        delete event;
-        return;
-    }
-
-    if (auto tData = receiver->threadData())
-    {
-        if (auto disp = tData->dispatcher.load())
-        {
-            disp->postEvent(receiver, event);
-            return;
-        }
-    }
-    delete event;
-}
-
 int GCoreApplication::exec()
 {
     m_exiting.store(false);

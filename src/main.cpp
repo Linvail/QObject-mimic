@@ -8,48 +8,6 @@
 #include "GTimer.h"
 
 /**
- * @brief Test event filter class to verify event interception.
- */
-class TestEventFilter : public GObject
-{
-public:
-    /**
-     * @brief Constructs a new TestEventFilter.
-     */
-    TestEventFilter()
-    : m_filteredCount(0)
-    {
-    }
-
-    /**
-     * @brief Intercepts events sent to watched object.
-     * @param watched Watched target object.
-     * @param event The event being dispatched.
-     * @return True if event is consumed, false otherwise.
-     */
-    virtual bool eventFilter(GObject* watched, GEvent* event) override
-    {
-        (void) watched;
-        if (event && event->type() == GEvent::User)
-        {
-            m_filteredCount++;
-            std::cout << "  TestEventFilter intercepted User event!" << std::endl;
-            return true;  // Consume event
-        }
-        return false;
-    }
-
-    /**
-     * @brief Gets total count of intercepted events.
-     * @return Filtered count.
-     */
-    int filteredCount() const { return m_filteredCount; }
-
-private:
-    int m_filteredCount;
-};
-
-/**
  * @brief Worker thread for testing signal emission and thread lifecycle.
  */
 class WorkerThread : public GThread
@@ -279,19 +237,8 @@ int main(int argc, char** argv)
     // 5. Initialize GCoreApplication & Event Loop Tests
     GCoreApplication app(argc, argv);
 
-    // Test Event Filter
-    TestEventFilter filter;
-    GObject         targetObject;
-    targetObject.installEventFilter(&filter);
-
-    GEvent userEv(GEvent::User);
-    targetObject.event(&userEv);
-    if (filter.filteredCount() != 1)
-    {
-        std::cerr << "FAIL: Event filter did not intercept event!" << std::endl;
-        return 1;
-    }
-    std::cout << "[Test 5] Event filter test passed!" << std::endl;
+    // Context object for the event-loop tests below (timers, worker thread signals).
+    GObject targetObject;
 
     // Test GTimer
     bool   timerFired = false;

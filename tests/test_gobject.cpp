@@ -123,114 +123,6 @@ private:
 };
 
 /**
- * @brief Test event filter class for GObject unit tests.
- */
-class GObjectTestFilter : public GObject
-{
-public:
-    /**
-     * @brief Event filter handler.
-     * @param watched Target object.
-     * @param event Event being processed.
-     * @return True if event is consumed.
-     */
-    virtual bool eventFilter(GObject* watched, GEvent* event) override
-    {
-        (void) watched;
-        if (event && event->type() == GEvent::User)
-        {
-            m_filtered = true;
-            return m_consume;
-        }
-        return false;
-    }
-
-    /**
-     * @brief Sets whether the filter consumes the event.
-     * @param consume True to consume event.
-     */
-    void setConsume(bool consume) { m_consume = consume; }
-
-    /**
-     * @brief Checks if event was filtered.
-     * @return True if filtered.
-     */
-    bool wasFiltered() const { return m_filtered; }
-
-    /**
-     * @brief Resets the filter flag.
-     */
-    void reset() { m_filtered = false; }
-
-private:
-    bool m_filtered{ false };
-    bool m_consume{ true };
-};
-
-/**
- * @brief Custom event class for unit tests.
- */
-class CustomTestEvent : public GEvent
-{
-public:
-    /**
-     * @brief Constructs custom test event with integer payload.
-     * @param data Integer payload value.
-     */
-    explicit CustomTestEvent(int data)
-    : GEvent(GEvent::User)
-    , m_data(data)
-    {
-    }
-
-    /**
-     * @brief Gets event payload data.
-     * @return Payload integer.
-     */
-    int data() const { return m_data; }
-
-private:
-    int m_data;
-};
-
-/**
- * @brief Custom GObject receiver for custom events.
- */
-class CustomEventReceiver : public GObject
-{
-public:
-    /**
-     * @brief Handles custom events.
-     * @param event Event pointer.
-     */
-    virtual void customEvent(GEvent* event) override
-    {
-        if (event && event->type() == GEvent::User)
-        {
-            auto* customEv = static_cast<CustomTestEvent*>(event);
-            m_receivedData = customEv->data();
-            m_handled      = true;
-        }
-    }
-
-    /**
-     * @brief Checks if custom event was handled.
-     * @return True if handled.
-     */
-    bool handled() const { return m_handled; }
-
-    /**
-     * @brief Gets received event payload.
-     * @return Payload integer.
-     */
-    int receivedData() const { return m_receivedData; }
-
-private:
-    bool m_handled{ false };
-    int  m_receivedData{ 0 };
-};
-
-/**
  * @brief Tests direct signal-slot connection and emission.
  *
  * Verifies that GObject::connect() correctly binds a GSignal to a GObject member function slot
@@ -266,25 +158,6 @@ TEST(GObjectTest, SignalDisconnection)
     GObject::disconnect(handle);
     sig.emit(20);
     EXPECT_EQ(receiver.callCount(), 1);
-}
-
-/**
- * @brief Tests event filter installation and interception.
- *
- * Verifies GObject::installEventFilter() registers a filter object and GObject::event() routes
- * incoming events to GObject::eventFilter() before default processing.
- */
-TEST(GObjectTest, EventFilterInterception)
-{
-    GObject           target;
-    GObjectTestFilter filter;
-
-    target.installEventFilter(&filter);
-
-    GEvent userEvent(GEvent::User);
-    target.event(&userEvent);
-
-    EXPECT_TRUE(filter.wasFiltered());
 }
 
 /**
@@ -417,46 +290,6 @@ TEST(GObjectTest, NullReceiverOrContextConnection)
     GObject* nullContext = nullptr;
     auto     handle2     = GObject::connect(sig, nullContext, [](int) {});
     EXPECT_FALSE(handle2.connected());
-}
-
-/**
- * @brief Tests event filter removal and non-consuming event handling.
- *
- * Verifies GObject::removeEventFilter() unregisters an installed event filter and that
- * non-consuming event filters permit event processing.
- */
-TEST(GObjectTest, EventFilterRemovalAndBypass)
-{
-    GObject           target;
-    GObjectTestFilter filter;
-
-    target.installEventFilter(&filter);
-    filter.setConsume(false);
-
-    GEvent userEvent(GEvent::User);
-    EXPECT_TRUE(target.event(&userEvent));
-    EXPECT_TRUE(filter.wasFiltered());
-
-    filter.reset();
-    target.removeEventFilter(&filter);
-    target.event(&userEvent);
-    EXPECT_FALSE(filter.wasFiltered());
-}
-
-/**
- * @brief Tests custom event delivery and handling.
- *
- * Verifies GObject::event() and GObject::customEvent() for dispatching custom GEvent subclasses.
- */
-TEST(GObjectTest, CustomEventHandling)
-{
-    CustomEventReceiver receiver;
-    CustomTestEvent     customEv(99);
-
-    EXPECT_FALSE(receiver.handled());
-    receiver.event(&customEv);
-    EXPECT_TRUE(receiver.handled());
-    EXPECT_EQ(receiver.receivedData(), 99);
 }
 
 /**

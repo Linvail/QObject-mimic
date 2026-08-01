@@ -42,12 +42,19 @@ GObject::~GObject()
     // arbitrary user cleanup-callback code).
     m_life.reset();
 
+    // Move the callbacks out from under m_cleanupMutex before invoking any of them. Running them
+    // while still holding the lock deadlocks on the non-recursive mutex if a callback calls
+    // addCleanupCallback() on this same object. A callback registered during the loop below is
+    // intentionally dropped -- this object is already being destroyed, so there is no later point
+    // at which it could meaningfully run.
+    std::vector<std::function<void()>> callbacksToRun;
     {
         std::lock_guard<std::mutex> lock(m_cleanupMutex);
-        for (auto& cb : m_cleanupCallbacks)
-        {
-            cb();
-        }
+        callbacksToRun.swap(m_cleanupCallbacks);
+    }
+    for (auto& cb : callbacksToRun)
+    {
+        cb();
     }
 
     {
@@ -186,53 +193,11 @@ void GObject::deleteLater()
     delete this;
 }
 
-void GObject::installEventFilter(GObject* filterObj)
-{
-    if (!filterObj)
-    {
-        return;
-    }
-    std::lock_guard<std::mutex> lock(m_eventFilterMutex);
-    if (std::find(m_eventFilters.begin(), m_eventFilters.end(), filterObj) == m_eventFilters.end())
-    {
-        m_eventFilters.push_back(filterObj);
-    }
-}
-
-void GObject::removeEventFilter(GObject* filterObj)
-{
-    if (!filterObj)
-    {
-        return;
-    }
-    std::lock_guard<std::mutex> lock(m_eventFilterMutex);
-    m_eventFilters.erase(std::remove(m_eventFilters.begin(), m_eventFilters.end(), filterObj),
-                         m_eventFilters.end());
-}
-
-bool GObject::eventFilter(GObject* watched, GEvent* event)
-{
-    (void) watched;
-    (void) event;
-    return false;
-}
-
 bool GObject::event(GEvent* event)
 {
     if (!event)
     {
         return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(m_eventFilterMutex);
-        for (GObject* filter : m_eventFilters)
-        {
-            if (filter && filter->eventFilter(this, event))
-            {
-                return true;
-            }
-        }
     }
 
     switch (event->type())
@@ -246,21 +211,14 @@ bool GObject::event(GEvent* event)
             return true;
 
         case GEvent::MetaCall:
-            customEvent(event);
+            static_cast<GMetaCallEvent*>(event)->placeMetaCall();
             return true;
 
         default:
-            customEvent(event);
-            return true;
-    }
-}
-
-void GObject::customEvent(GEvent* event)
-{
-    if (event->type() == GEvent::MetaCall)
-    {
-        auto* metaEvent = static_cast<GMetaCallEvent*>(event);
-        metaEvent->placeMetaCall();
+            // The only events that reach this queue are the three above, all posted by GObject's
+            // own internals. Nothing can inject an arbitrary event for an arbitrary receiver, so
+            // any other type is unreachable rather than something to hand to a user hook.
+            return false;
     }
 }
 

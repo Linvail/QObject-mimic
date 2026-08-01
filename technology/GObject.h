@@ -19,6 +19,7 @@ class GThread;
 template<typename... Args>
 class GSignal;
 class GAbstractEventDispatcher;
+class GEventDispatcherDefault;
 
 struct GThreadData
 {
@@ -79,39 +80,6 @@ public:
     void deleteLater();
 
     /**
-     * @brief Installs an event filter object on this object.
-     * @param filterObj The object that will filter events. Thread-safe.
-     */
-    void installEventFilter(GObject* filterObj);
-
-    /**
-     * @brief Removes an event filter object from this object.
-     * @param filterObj The event filter object to remove. Thread-safe.
-     */
-    void removeEventFilter(GObject* filterObj);
-
-    /**
-     * @brief Filters events if this object has been installed as an event filter.
-     * @param watched The object being watched.
-     * @param event The event to filter.
-     * @return True if the event was filtered (consumed), false otherwise.
-     */
-    virtual bool eventFilter(GObject* watched, GEvent* event);
-
-    /**
-     * @brief Main event handler entry point.
-     * @param event The event to handle.
-     * @return True if the event was recognized and handled.
-     */
-    virtual bool event(GEvent* event);
-
-    /**
-     * @brief Handles custom events sent to this object.
-     * @param event The event to handle.
-     */
-    virtual void customEvent(GEvent* event);
-
-    /**
      * @brief Handles timer events sent to this object.
      * @param event The timer event containing the timer ID.
      */
@@ -141,17 +109,6 @@ public:
      * @return A weak pointer to this object's life token. Thread-safe.
      */
     std::weak_ptr<int> objectLife() const { return m_life; }
-
-    /**
-     * @brief Dispatches a metacall callback to the target object's event loop based on connection
-     * type.
-     * @param target Target GObject.
-     * @param slot Callback function.
-     * @param type Connection type. Thread-safe.
-     */
-    static void dispatchMetaCall(GObject*              target,
-                                 std::function<void()> slot,
-                                 G::ConnectionType     type);
 
     /**
      * @brief [Connect Overload 1]: Connects a signal to a non-overloaded member function slot.
@@ -699,6 +656,30 @@ private:
                                   const GCallLaterKey&  key,
                                   std::function<void()> invoker);
 
+    /**
+     * @brief Internal event dispatch plumbing; routes an event to its handler.
+     *
+     * Deliberately private and non-virtual: this is not an extension point. The event queue is
+     * the sole caller (see the friend declaration below), and the set of event types is closed.
+     * Override timerEvent() instead to react to timers.
+     * @param event The event to handle.
+     * @return True if the event was recognized and handled.
+     */
+    bool event(GEvent* event);
+
+    /**
+     * @brief Dispatches a metacall callback to the target object's event loop based on connection
+     * type.
+     * @param target Target GObject.
+     * @param slot Callback function.
+     * @param type Connection type. Thread-safe.
+     */
+    static void dispatchMetaCall(GObject*              target,
+                                 std::function<void()> slot,
+                                 G::ConnectionType     type);
+
+    /** @brief Grants the event queue access to event(), which it alone invokes. */
+    friend class GEventDispatcherDefault;
 
     std::shared_ptr<int>               m_life;
     std::shared_ptr<GThreadData>       m_threadData;
@@ -707,8 +688,6 @@ private:
     GObject*                           m_parent;
     std::string                        m_objectName;
     mutable std::mutex                 m_nameMutex;
-    std::vector<GObject*>              m_eventFilters;
-    std::mutex                         m_eventFilterMutex;
     std::vector<std::function<void()>> m_cleanupCallbacks;
     std::mutex                         m_cleanupMutex;
     static std::atomic<int>            s_nextTimerId;

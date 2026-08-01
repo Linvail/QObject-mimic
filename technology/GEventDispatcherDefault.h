@@ -39,6 +39,26 @@ public:
     virtual bool processEvents() override;
 
     /**
+     * @brief Wakes up the event loop if waiting.
+     *
+     * Note: Thread-safe.
+     */
+    virtual void wakeUp() override;
+
+    /**
+     * @brief Interrupts processEvents execution.
+     *
+     * Note: Thread-safe.
+     */
+    virtual void interrupt() override;
+
+protected:
+    // Mirrors the access level GAbstractEventDispatcher gives these. The base class's access
+    // already governs every call made through the GAbstractEventDispatcher* that
+    // GThread::eventDispatcher() hands out, so this is belt-and-suspenders -- it closes the
+    // remaining gap for a caller holding a GEventDispatcherDefault* directly.
+
+    /**
      * @brief Registers a timer for a target object.
      * @param timerId Unique timer identifier.
      * @param interval Interval in milliseconds.
@@ -74,19 +94,7 @@ public:
      */
     virtual void removeEventsForReceiver(GObject* receiver) override;
 
-    /**
-     * @brief Wakes up the event loop if waiting.
-     *
-     * Note: Thread-safe.
-     */
-    virtual void wakeUp() override;
-
-    /**
-     * @brief Interrupts processEvents execution.
-     *
-     * Note: Thread-safe.
-     */
-    virtual void interrupt() override;
+    friend class GObject;
 
 private:
     struct EventPair

@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <thread>
 
 // ---------------------------------------------------------------------------------------------
@@ -261,6 +262,21 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
  * build/test invocation to get that signal. The check below only confirms the scenario runs to
  * completion without crashing or hanging; it cannot by itself prove the leak window was hit.
  */
+/**
+ * @brief Exposes GEventDispatcherDefault::registerTimer() for this whitebox stress test.
+ *
+ * registerTimer() is protected and friended to GObject alone, so that only GObject's internals
+ * (startTimer()/killTimer()) can register a timer on another object's behalf. This test needs to
+ * drive it directly -- it registers thousands of raw timer IDs on a standalone dispatcher that is
+ * deliberately not attached to any thread, to widen the collection loop that the race targets.
+ * A using-declaration re-widens access in this subclass without loosening the shipping class.
+ */
+class DefectTestableDispatcher : public GEventDispatcherDefault
+{
+public:
+    using GEventDispatcherDefault::registerTimer;
+};
+
 TEST(GEventDispatcherDefaultDefectTest, InterruptDuringTimerCollectionStress)
 {
     constexpr int kTrials         = 30;
@@ -270,7 +286,7 @@ TEST(GEventDispatcherDefaultDefectTest, InterruptDuringTimerCollectionStress)
 
     for (int trial = 0; trial < kTrials; ++trial)
     {
-        GEventDispatcherDefault dispatcher;
+        DefectTestableDispatcher dispatcher;
         for (int i = 0; i < kTimersPerTrial; ++i)
         {
             // interval 0 => already due by the time processEvents() checks it.
@@ -452,4 +468,73 @@ TEST(GObjectDefectTest, ConcurrentEmitDuringDestructionStress)
     workerThread.wait();
 
     SUCCEED();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: ~GObject() invoked cleanup callbacks while still holding m_cleanupMutex, so a callback
+// that called addCleanupCallback() on the same object self-deadlocked on a non-recursive mutex.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Regression test for the cleanup-callback deadlock in ~GObject().
+ *
+ * ~GObject() used to run the callbacks inside the m_cleanupMutex lock_guard scope. A callback
+ * that re-entered addCleanupCallback() on the same object then blocked forever trying to relock
+ * a mutex its own call stack already held (locking a non-recursive std::mutex recursively is
+ * undefined behavior; deadlock is the usual manifestation). The fix swaps the callback vector out
+ * from under the lock and invokes the copies with the mutex released.
+ *
+ * Deterministic -- there is no timing window here; the old code failed on every run. How that
+ * failure presents is platform-dependent, and both forms were confirmed by temporarily restoring
+ * the old destructor body:
+ *   - MSVC (verified): its std::mutex detects the recursive lock and aborts the test binary with
+ *     exit code 3, before this test can reach any assertion. That abort *is* the failure signal,
+ *     the same way GThreadDefectTest.RestartAfterFinishWithoutWaitDoesNotTerminate's
+ *     std::terminate() is.
+ *   - Implementations that simply block instead (the classic deadlock) are caught by the 5s
+ *     timeout below, which is why the destruction runs on its own thread rather than inline --
+ *     otherwise a regression would hang the whole binary with no output.
+ *
+ * On the timeout path the worker stays blocked forever and is detached, so the process may also
+ * report a leak or hang at exit; the EXPECT_TRUE is the intended signal and the messy exit is a
+ * side effect. Everything the worker touches is owned by it or held via shared_ptr, so nothing
+ * dangles if the test body returns first.
+ */
+TEST(GObjectDefectTest, CleanupCallbackRegisteringAnotherDoesNotDeadlock)
+{
+    auto  reentrantCallSucceeded = std::make_shared<std::atomic<bool>>(false);
+    auto* subject                = new GObject();
+
+    subject->addCleanupCallback(
+        [subject, reentrantCallSucceeded]()
+        {
+            // Pre-fix, this call blocks forever: ~GObject() is still holding m_cleanupMutex.
+            subject->addCleanupCallback([]() {});
+            reentrantCallSucceeded->store(true);
+        });
+
+    std::promise<void> donePromise;
+    auto               doneFuture = donePromise.get_future();
+    std::thread        destroyer(
+        [subject, p = std::move(donePromise)]() mutable
+        {
+            delete subject;
+            p.set_value();
+        });
+
+    const bool finished
+        = doneFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    EXPECT_TRUE(finished) << "~GObject() did not finish within 5s -- a cleanup callback that "
+                             "re-registers another callback deadlocked on m_cleanupMutex.";
+
+    if (finished)
+    {
+        destroyer.join();
+        EXPECT_TRUE(reentrantCallSucceeded->load())
+            << "the re-entrant addCleanupCallback() never returned.";
+    }
+    else
+    {
+        destroyer.detach();
+    }
 }
