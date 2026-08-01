@@ -1,57 +1,66 @@
-BasedOnStyle: Mozilla
-AccessModifierOffset: '-4'
-AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: 'true'
-AlignConsecutiveDeclarations: 'true'
-AlignEscapedNewlinesLeft: 'false'
-AlignOperands: 'true'
-AlignTrailingComments: 'true'
-AllowAllParametersOfDeclarationOnNextLine: 'true'
-AllowShortBlocksOnASingleLine: 'true'
-AllowShortCaseLabelsOnASingleLine: 'false'
-AllowShortFunctionsOnASingleLine: All
-AllowShortIfStatementsOnASingleLine: 'false'
-AllowShortLoopsOnASingleLine: 'false'
-AlwaysBreakAfterDefinitionReturnType: None
-AlwaysBreakAfterReturnType: None
-AlwaysBreakTemplateDeclarations: 'true'
-BreakBeforeBinaryOperators: All
-BreakBeforeBraces: Allman
-BreakBeforeTernaryOperators: 'true'
-BreakConstructorInitializersBeforeComma: 'true'
-BreakStringLiterals: 'false'
-ColumnLimit: '100'
-ConstructorInitializerAllOnOneLineOrOnePerLine: 'false'
-ConstructorInitializerIndentWidth: '0'
-ContinuationIndentWidth: '4'
-Cpp11BracedListStyle: 'false'
-DerivePointerAlignment: 'false'
-DisableFormat: 'false'
-ExperimentalAutoDetectBinPacking: 'true'
-IndentCaseLabels: 'true'
-IndentWidth: '4'
-IndentWrappedFunctionNames: 'false'
-JavaScriptQuotes: Single
-KeepEmptyLinesAtTheStartOfBlocks: 'false'
-Language: Cpp
-MaxEmptyLinesToKeep: '2'
-NamespaceIndentation: None
-ObjCBlockIndentWidth: '4'
-ObjCSpaceAfterProperty: 'false'
-ObjCSpaceBeforeProtocolList: 'false'
-PointerAlignment: Left
-ReflowComments: 'true'
-SortIncludes: 'false'
-SpaceAfterCStyleCast: 'true'
-SpaceBeforeAssignmentOperators: 'true'
-SpaceBeforeParens: ControlStatements
-SpaceInEmptyParentheses: 'false'
-SpacesBeforeTrailingComments: '2'
-SpacesInAngles: 'false'
-SpacesInCStyleCastParentheses: 'false'
-SpacesInContainerLiterals: 'false'
-SpacesInParentheses: 'false'
-SpacesInSquareBrackets: 'false'
-Standard: Cpp11
-TabWidth: '4'
+BasedOnStyle: LLVM
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
 UseTab: Never
+
+# Braces - Allman style
+BreakBeforeBraces: Allman
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+  BeforeElse: true
+  BeforeCatch: true
+  BeforeWhile: true
+
+# Keep code readable
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+# Function declarations / calls
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: false
+PenaltyBreakBeforeFirstCallParameter: 0
+
+# Constructors
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+
+# Classes
+AccessModifierOffset: -4
+EmptyLineBeforeAccessModifier: Always
+
+# Pointers / references
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Namespaces
+NamespaceIndentation: None
+
+# Includes
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# Modern C++
+Cpp11BracedListStyle: true
+
+# Operators
+BreakBeforeBinaryOperators: None
+
+# Comments
+ReflowComments: true
+
+IndentPPDirectives: BeforeHash
