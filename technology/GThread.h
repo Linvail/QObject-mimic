@@ -73,15 +73,14 @@ public:
 
     /**
      * @brief Gets the event dispatcher for this thread. Thread-safe.
-     * @return Pointer to event dispatcher.
+     *
+     * Read-only by design. There is deliberately no setter: swapping a running thread's
+     * dispatcher raced against that thread's own start/finish lifecycle, which could delete a
+     * dispatcher an active exec()/processEvents() loop was still calling into. A thread creates
+     * and owns its dispatcher in start(); GCoreApplication supplies the main thread's.
+     * @return Pointer to event dispatcher, or nullptr before start().
      */
     GAbstractEventDispatcher* eventDispatcher() const;
-
-    /**
-     * @brief Sets a custom event dispatcher for this thread. Thread-safe.
-     * @param dispatcher Pointer to the new dispatcher.
-     */
-    void setEventDispatcher(GAbstractEventDispatcher* dispatcher);
 
     /**
      * @brief Signal emitted when the thread starts running.
@@ -124,14 +123,14 @@ public:
     std::shared_ptr<GThreadData> threadData() const { return m_data; }
 
 private:
-    std::unique_ptr<std::thread>           m_thread;
-    std::shared_ptr<GThreadData>           m_data;
-    std::atomic<bool>                      m_running{ false };
-    std::atomic<bool>                      m_finished{ false };
-    std::atomic<bool>                      m_exiting{ false };
-    std::atomic<int>                       m_exitCode{ 0 };
-    mutable std::mutex                     m_waitMutex;
-    std::condition_variable                m_waitCv;
+    std::unique_ptr<std::thread> m_thread;
+    std::shared_ptr<GThreadData> m_data;
+    std::atomic<bool>            m_running{ false };
+    std::atomic<bool>            m_finished{ false };
+    std::atomic<bool>            m_exiting{ false };
+    std::atomic<int>             m_exitCode{ 0 };
+    mutable std::mutex           m_waitMutex;
+    std::condition_variable      m_waitCv;
 
     static thread_local GThread* s_currentThread;
     friend class GCoreApplication;
@@ -168,4 +167,4 @@ GThread* GThread::create(Function&& f, Args&&... args)
     return threadObj;
 }
 
-#endif // GTHREAD_H
+#endif  // GTHREAD_H

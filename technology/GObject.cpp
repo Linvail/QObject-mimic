@@ -1,34 +1,51 @@
 #include "GObject.h"
-#include "GThread.h"
-#include "GEvent.h"
+
 #include "GAbstractEventDispatcher.h"
+#include "GEvent.h"
+#include "GThread.h"
+
 #include <algorithm>
 #include <unordered_map>
 
 struct CallLaterNode
 {
-    std::mutex            mutex;
+    std::mutex mutex;
     std::function<void()> invoker;
 };
 
-static std::mutex s_callLaterMutex;
-static std::unordered_map<GObject::GCallLaterKey,
-                          std::shared_ptr<CallLaterNode>,
-                          GObject::GCallLaterKeyHash>
-    s_pendingCallLaters;
+/**
+ * @brief Process-wide registry of callLater invocations still waiting to run.
+ *
+ * Exists as a friend of GObject purely so it can name GObject's private GCallLaterKey /
+ * GCallLaterKeyHash types; a plain file-scope map could not. Not declared in any header.
+ */
+struct GCallLaterRegistry
+{
+    static std::mutex mutex;
+    static std::unordered_map<GObject::GCallLaterKey,
+                              std::shared_ptr<CallLaterNode>,
+                              GObject::GCallLaterKeyHash>
+        pending;
+};
 
-std::atomic<int> GObject::s_nextTimerId{ 1 };
+std::mutex GCallLaterRegistry::mutex;
+std::unordered_map<GObject::GCallLaterKey,
+                   std::shared_ptr<CallLaterNode>,
+                   GObject::GCallLaterKeyHash>
+    GCallLaterRegistry::pending;
+
+std::atomic<int> GObject::s_nextTimerId{1};
 
 GObject::GObject(GObject* parent)
-: m_life(std::make_shared<int>(0))
-, m_parent(parent)
+    : m_life(std::make_shared<int>(0))
+    , m_parent(parent)
 {
     GThread* current = GThread::currentThread();
     m_thread.store(current);
     if (current)
     {
         std::shared_ptr<GThreadData> data = current->threadData();
-        std::lock_guard<std::mutex>  lock(m_threadDataMutex);
+        std::lock_guard<std::mutex> lock(m_threadDataMutex);
         m_threadData = std::move(data);
     }
 }
@@ -58,12 +75,13 @@ GObject::~GObject()
     }
 
     {
-        std::lock_guard<std::mutex> lock(s_callLaterMutex);
-        for (auto it = s_pendingCallLaters.begin(); it != s_pendingCallLaters.end();)
+        std::lock_guard<std::mutex> lock(GCallLaterRegistry::mutex);
+        auto& pending = GCallLaterRegistry::pending;
+        for (auto it = pending.begin(); it != pending.end();)
         {
             if (it->first.context == this)
             {
-                it = s_pendingCallLaters.erase(it);
+                it = pending.erase(it);
             }
             else
             {
@@ -86,8 +104,8 @@ GObject::~GObject()
     }
 }
 
-void GObject::scheduleCallLater(GObject*              context,
-                                const GCallLaterKey&  key,
+void GObject::scheduleCallLater(GObject* context,
+                                const GCallLaterKey& key,
                                 std::function<void()> invoker)
 {
     if (!context)
@@ -96,20 +114,21 @@ void GObject::scheduleCallLater(GObject*              context,
     }
 
     std::shared_ptr<CallLaterNode> node;
-    bool                           isNew = false;
+    bool isNew = false;
 
     {
-        std::lock_guard<std::mutex> lock(s_callLaterMutex);
-        auto                        it = s_pendingCallLaters.find(key);
-        if (it != s_pendingCallLaters.end())
+        std::lock_guard<std::mutex> lock(GCallLaterRegistry::mutex);
+        auto& pending = GCallLaterRegistry::pending;
+        auto it = pending.find(key);
+        if (it != pending.end())
         {
             node = it->second;
         }
         else
         {
-            node                     = std::make_shared<CallLaterNode>();
-            s_pendingCallLaters[key] = node;
-            isNew                    = true;
+            node = std::make_shared<CallLaterNode>();
+            pending[key] = node;
+            isNew = true;
         }
     }
 
@@ -121,12 +140,12 @@ void GObject::scheduleCallLater(GObject*              context,
     if (isNew)
     {
         std::weak_ptr<int> weakLife = context->objectLife();
-        auto               metaCall = [key, node, weakLife]()
+        auto metaCall = [key, node, weakLife]()
         {
             std::function<void()> fnToRun;
             {
-                std::lock_guard<std::mutex> lock(s_callLaterMutex);
-                s_pendingCallLaters.erase(key);
+                std::lock_guard<std::mutex> lock(GCallLaterRegistry::mutex);
+                GCallLaterRegistry::pending.erase(key);
             }
             {
                 std::lock_guard<std::mutex> nodeLock(node->mutex);
@@ -145,8 +164,10 @@ void GObject::scheduleCallLater(GObject*              context,
     }
 }
 
-
-GThread* GObject::thread() const { return m_thread.load(); }
+GThread* GObject::thread() const
+{
+    return m_thread.load();
+}
 
 std::shared_ptr<GThreadData> GObject::threadData() const
 {
@@ -202,27 +223,30 @@ bool GObject::event(GEvent* event)
 
     switch (event->type())
     {
-        case GEvent::Timer:
-            timerEvent(static_cast<GTimerEvent*>(event));
-            return true;
+    case GEvent::Timer:
+        timerEvent(static_cast<GTimerEvent*>(event));
+        return true;
 
-        case GEvent::DeferredDelete:
-            delete this;
-            return true;
+    case GEvent::DeferredDelete:
+        delete this;
+        return true;
 
-        case GEvent::MetaCall:
-            static_cast<GMetaCallEvent*>(event)->placeMetaCall();
-            return true;
+    case GEvent::MetaCall:
+        static_cast<GMetaCallEvent*>(event)->placeMetaCall();
+        return true;
 
-        default:
-            // The only events that reach this queue are the three above, all posted by GObject's
-            // own internals. Nothing can inject an arbitrary event for an arbitrary receiver, so
-            // any other type is unreachable rather than something to hand to a user hook.
-            return false;
+    default:
+        // The only events that reach this queue are the three above, all posted by GObject's
+        // own internals. Nothing can inject an arbitrary event for an arbitrary receiver, so
+        // any other type is unreachable rather than something to hand to a user hook.
+        return false;
     }
 }
 
-void GObject::timerEvent(GTimerEvent* event) { (void) event; }
+void GObject::timerEvent(GTimerEvent* event)
+{
+    (void)event;
+}
 
 int GObject::startTimer(int interval)
 {
@@ -262,8 +286,8 @@ void GObject::dispatchMetaCall(GObject* target, std::function<void()> slot, G::C
         return;
     }
 
-    GThread*          targetThread = target->thread();
-    G::ConnectionType activeType   = type;
+    GThread* targetThread = target->thread();
+    G::ConnectionType activeType = type;
     if (activeType == G::AutoConnection)
     {
         GThread* currentThread = GThread::currentThread();

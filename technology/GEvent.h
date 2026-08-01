@@ -6,6 +6,11 @@
 
 /**
  * @brief Base class for all events in the event loop.
+ *
+ * The event set is closed: these three types are the only ones the queue ever carries, and all of
+ * them are posted by GObject's own internals. There is deliberately no user/custom event type and
+ * no way to post an arbitrary event for an arbitrary receiver -- this is a queued signal-slot
+ * mechanism, not a general event system.
  */
 class GEvent
 {
@@ -15,21 +20,10 @@ public:
      */
     enum Type
     {
-        None           = 0,
         MetaCall       = 1,
         Timer          = 2,
-        DeferredDelete = 3,
-        User           = 1000
+        DeferredDelete = 3
     };
-
-    /**
-     * @brief Constructs an event of the specified type.
-     * @param type The type of the event.
-     */
-    GEvent(Type type)
-    : m_type(type)
-    {
-    }
 
     /**
      * @brief Virtual destructor.
@@ -42,16 +36,31 @@ public:
      */
     Type type() const { return m_type; }
 
+protected:
+    /**
+     * @brief Constructs an event of the specified type.
+     *
+     * Protected: GEvent is only ever instantiated through one of the concrete subclasses below.
+     * @param type The type of the event.
+     */
+    GEvent(Type type)
+    : m_type(type)
+    {
+    }
+
 private:
     Type m_type;
 };
 
 /**
  * @brief An event that encapsulates a function call across threads.
+ *
+ * Entirely internal: it wraps an arbitrary callable, so both creating one and firing one are
+ * restricted to GObject, which is the only code that queues or dispatches metacalls.
  */
 class GMetaCallEvent : public GEvent
 {
-public:
+private:
     /**
      * @brief Constructs a metacall event with the given callback.
      * @param callback The function to execute.
@@ -73,8 +82,9 @@ public:
         }
     }
 
-private:
     std::function<void()> m_callback;
+
+    friend class GObject;
 };
 
 /**
@@ -85,6 +95,10 @@ class GTimerEvent : public GEvent
 public:
     /**
      * @brief Constructs a timer event with a given timer ID.
+     *
+     * Left public, unlike the other two event types: timerEvent() is a supported override point,
+     * so synthesizing a GTimerEvent to drive an override directly (as tests do) is legitimate.
+     * Constructing one grants no privileged capability -- it cannot be posted to any queue.
      * @param timerId The unique identifier of the expired timer.
      */
     GTimerEvent(int timerId)
@@ -105,10 +119,13 @@ private:
 
 /**
  * @brief Event sent to delete an object asynchronously.
+ *
+ * Internal: only GObject::deleteLater() creates one. Delivering this event destroys the receiver,
+ * so it must not be constructible by outside code.
  */
 class GDeferredDeleteEvent : public GEvent
 {
-public:
+private:
     /**
      * @brief Constructs a deferred delete event.
      */
@@ -116,6 +133,8 @@ public:
     : GEvent(DeferredDelete)
     {
     }
+
+    friend class GObject;
 };
 
-#endif // GEVENT_H
+#endif  // GEVENT_H

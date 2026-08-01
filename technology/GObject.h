@@ -1,30 +1,46 @@
 #ifndef GOBJECT_H
 #define GOBJECT_H
 
-#include "GGlobal.h"
 #include "GEvent.h"
-#include <vector>
-#include <string>
-#include <functional>
-#include <mutex>
-#include <memory>
-#include <atomic>
-#include <type_traits>
+#include "GGlobal.h"
+
 #include <array>
+#include <atomic>
 #include <cstring>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <tuple>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 class GThread;
-template<typename... Args>
-class GSignal;
+template <typename... Args> class GSignal;
 class GAbstractEventDispatcher;
 class GEventDispatcherDefault;
+class GCoreApplication;
 
+/**
+ * @brief Per-thread state holding that thread's event dispatcher and who owns it.
+ *
+ * Handed out by GObject::threadData()/GThread::threadData() as an opaque handle. Its members are
+ * private on purpose: they are a live pointer to the dispatcher a running event loop is calling
+ * into, plus the flag that decides whether that dispatcher gets deleted on thread exit. Writable
+ * from outside, they would allow redirecting a thread's dispatcher to an arbitrary address or
+ * forging ownership into a double free. Only the three classes that legitimately manage a
+ * thread's lifecycle are granted access.
+ */
 struct GThreadData
 {
-    std::atomic<GAbstractEventDispatcher*> dispatcher{ nullptr };
-    std::atomic<bool>                      ownsDispatcher{ false };
+private:
+    std::atomic<GAbstractEventDispatcher*> dispatcher{nullptr};
+    std::atomic<bool> ownsDispatcher{false};
+
+    friend class GObject;
+    friend class GThread;
+    friend class GCoreApplication;
 };
 
 /**
@@ -108,7 +124,10 @@ public:
      * @brief Gets the weak pointer tracking the lifetime of this object.
      * @return A weak pointer to this object's life token. Thread-safe.
      */
-    std::weak_ptr<int> objectLife() const { return m_life; }
+    std::weak_ptr<int> objectLife() const
+    {
+        return m_life;
+    }
 
     /**
      * @brief [Connect Overload 1]: Connects a signal to a non-overloaded member function slot.
@@ -125,11 +144,11 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename Signal, typename Receiver, typename Slot>
+    template <typename Signal, typename Receiver, typename Slot>
     static std::enable_if_t<G::MemberFunctionTraits<Slot>::is_member_function, G::ConnectionHandle>
-    connect(Signal&           signal,
-            Receiver*         receiver,
-            Slot              slot,
+    connect(Signal& signal,
+            Receiver* receiver,
+            Slot slot,
             G::ConnectionType type = G::AutoConnection);
 
     /**
@@ -149,13 +168,13 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename SlotClass>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && std::is_base_of<SlotClass, Receiver>::value
-                                && !std::is_same<SlotClass, Receiver>::value,
+    template <typename... SignalArgs, typename Receiver, typename SlotClass>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                std::is_base_of<SlotClass, Receiver>::value &&
+                                !std::is_same<SlotClass, Receiver>::value,
                             G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             void (SlotClass::*slot)(SignalArgs...),
             G::ConnectionType type = G::AutoConnection);
 
@@ -174,13 +193,13 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename SlotClass>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && std::is_base_of<SlotClass, Receiver>::value
-                                && !std::is_same<SlotClass, Receiver>::value,
+    template <typename... SignalArgs, typename Receiver, typename SlotClass>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                std::is_base_of<SlotClass, Receiver>::value &&
+                                !std::is_same<SlotClass, Receiver>::value,
                             G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             void (SlotClass::*slot)(SignalArgs...) const,
             G::ConnectionType type = G::AutoConnection);
 
@@ -201,13 +220,13 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
+    template <typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
     static std::enable_if_t<
-        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-            && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value &&
+            !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
         G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             Ret (SlotClass::*slot)(SignalArgs...),
             G::ConnectionType type = G::AutoConnection);
 
@@ -226,13 +245,13 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
+    template <typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
     static std::enable_if_t<
-        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-            && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value &&
+            !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
         G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             Ret (SlotClass::*slot)(SignalArgs...) const,
             G::ConnectionType type = G::AutoConnection);
 
@@ -253,12 +272,12 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle> connect(
-        GSignal<SignalArgs...>& signal,
-        Receiver*               receiver,
-        void (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
-        G::ConnectionType type = G::AutoConnection);
+    template <typename... SignalArgs, typename Receiver>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+    connect(GSignal<SignalArgs...>& signal,
+            Receiver* receiver,
+            void (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
+            G::ConnectionType type = G::AutoConnection);
 
     /**
      * @brief [Connect Overload 7]: Connects an overloaded const void member function slot defined
@@ -274,12 +293,12 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle> connect(
-        GSignal<SignalArgs...>& signal,
-        Receiver*               receiver,
-        void (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
-        G::ConnectionType type = G::AutoConnection);
+    template <typename... SignalArgs, typename Receiver>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+    connect(GSignal<SignalArgs...>& signal,
+            Receiver* receiver,
+            void (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
+            G::ConnectionType type = G::AutoConnection);
 
     /**
      * @brief [Connect Overload 8]: Connects an overloaded non-void returning member function slot
@@ -298,12 +317,12 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename Ret>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && !std::is_same<Ret, void>::value,
+    template <typename... SignalArgs, typename Receiver, typename Ret>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                !std::is_same<Ret, void>::value,
                             G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             Ret (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
             G::ConnectionType type = G::AutoConnection);
 
@@ -322,12 +341,12 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename... SignalArgs, typename Receiver, typename Ret>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && !std::is_same<Ret, void>::value,
+    template <typename... SignalArgs, typename Receiver, typename Ret>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                !std::is_same<Ret, void>::value,
                             G::ConnectionHandle>
     connect(GSignal<SignalArgs...>& signal,
-            Receiver*               receiver,
+            Receiver* receiver,
             Ret (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
             G::ConnectionType type = G::AutoConnection);
 
@@ -345,12 +364,12 @@ public:
      * @param type The type of connection.
      * @return A handle representing the connection. Thread-safe.
      */
-    template<typename Signal, typename Functor>
+    template <typename Signal, typename Functor>
     static std::enable_if_t<!G::MemberFunctionTraits<Functor>::is_member_function,
                             G::ConnectionHandle>
-    connect(Signal&           signal,
-            GObject*          context,
-            Functor           slot,
+    connect(Signal& signal,
+            GObject* context,
+            Functor slot,
             G::ConnectionType type = G::AutoConnection);
 
     /**
@@ -372,9 +391,9 @@ public:
      * @param slot Member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename Slot, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && G::MemberFunctionTraits<Slot>::is_member_function,
+    template <typename Receiver, typename Slot, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                G::MemberFunctionTraits<Slot>::is_member_function,
                             void>
     callLater(Receiver* receiver, Slot slot, Args&&... args);
 
@@ -392,10 +411,10 @@ public:
      * @param slot Member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename SlotClass, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && std::is_base_of<SlotClass, Receiver>::value
-                                && !std::is_same<SlotClass, Receiver>::value,
+    template <typename Receiver, typename SlotClass, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                std::is_base_of<SlotClass, Receiver>::value &&
+                                !std::is_same<SlotClass, Receiver>::value,
                             void>
     callLater(Receiver* receiver, void (SlotClass::*slot)(G::NonDeduced<Args>...), Args&&... args);
 
@@ -411,10 +430,10 @@ public:
      * @param slot Const member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename SlotClass, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && std::is_base_of<SlotClass, Receiver>::value
-                                && !std::is_same<SlotClass, Receiver>::value,
+    template <typename Receiver, typename SlotClass, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                std::is_base_of<SlotClass, Receiver>::value &&
+                                !std::is_same<SlotClass, Receiver>::value,
                             void>
     callLater(Receiver* receiver,
               void (SlotClass::*slot)(G::NonDeduced<Args>...) const,
@@ -435,10 +454,10 @@ public:
      * @param slot Member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename SlotClass, typename Ret, typename... Args>
+    template <typename Receiver, typename SlotClass, typename Ret, typename... Args>
     static std::enable_if_t<
-        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-            && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value &&
+            !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
         void>
     callLater(Receiver* receiver, Ret (SlotClass::*slot)(G::NonDeduced<Args>...), Args&&... args);
 
@@ -455,10 +474,10 @@ public:
      * @param slot Const member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename SlotClass, typename Ret, typename... Args>
+    template <typename Receiver, typename SlotClass, typename Ret, typename... Args>
     static std::enable_if_t<
-        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-            && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+        std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value &&
+            !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
         void>
     callLater(Receiver* receiver,
               Ret (SlotClass::*slot)(G::NonDeduced<Args>...) const,
@@ -477,11 +496,11 @@ public:
      * @param slot Member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> callLater(
-        Receiver* receiver,
-        void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
-        Args&&... args);
+    template <typename Receiver, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
+    callLater(Receiver* receiver,
+              void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
+              Args&&... args);
 
     /**
      * @brief [CallLater Overload 7]: Schedules an overloaded const void member function slot
@@ -494,11 +513,11 @@ public:
      * @param slot Const member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> callLater(
-        Receiver* receiver,
-        void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
-        Args&&... args);
+    template <typename Receiver, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
+    callLater(Receiver* receiver,
+              void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
+              Args&&... args);
 
     /**
      * @brief [CallLater Overload 8]: Schedules an overloaded non-void returning member function
@@ -514,9 +533,9 @@ public:
      * @param slot Member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename Ret, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && !std::is_same<Ret, void>::value,
+    template <typename Receiver, typename Ret, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                !std::is_same<Ret, void>::value,
                             void>
     callLater(Receiver* receiver,
               Ret (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
@@ -534,9 +553,9 @@ public:
      * @param slot Const member function pointer.
      * @param args Arguments passed to slot. Thread-safe.
      */
-    template<typename Receiver, typename Ret, typename... Args>
-    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                                && !std::is_same<Ret, void>::value,
+    template <typename Receiver, typename Ret, typename... Args>
+    static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                                !std::is_same<Ret, void>::value,
                             void>
     callLater(Receiver* receiver,
               Ret (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
@@ -553,9 +572,9 @@ public:
      * @param func Function pointer.
      * @param args Arguments passed to function. Thread-safe.
      */
-    template<typename Func, typename... Args>
-    static std::enable_if_t<std::is_pointer<Func>::value
-                                && std::is_function<std::remove_pointer_t<Func>>::value,
+    template <typename Func, typename... Args>
+    static std::enable_if_t<std::is_pointer<Func>::value &&
+                                std::is_function<std::remove_pointer_t<Func>>::value,
                             void>
     callLater(GObject* context, Func func, Args&&... args);
 
@@ -570,7 +589,7 @@ public:
      * @param signal GSignal instance to emit.
      * @param args Arguments passed to signal. Thread-safe.
      */
-    template<typename... SignalArgs, typename... Args>
+    template <typename... SignalArgs, typename... Args>
     static void callLater(GObject* context, GSignal<SignalArgs...>& signal, Args&&... args);
 
     /**
@@ -586,25 +605,28 @@ public:
      * @param target Unsupported callable object (e.g. lambda).
      * @param args Arguments.
      */
-    template<typename Target, typename... Args>
-    static std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function
-                                && !(std::is_pointer<Target>::value
-                                     && std::is_function<std::remove_pointer_t<Target>>::value)
-                                && !G::IsGSignal<std::decay_t<Target>>::value,
+    template <typename Target, typename... Args>
+    static std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function &&
+                                !(std::is_pointer<Target>::value &&
+                                  std::is_function<std::remove_pointer_t<Target>>::value) &&
+                                !G::IsGSignal<std::decay_t<Target>>::value,
                             void>
     callLater(GObject* context, Target&& target, Args&&... args);
 
+private:
     /**
      * @brief Key identifying a deduplicated deferred call.
+     *
+     * Implementation detail of callLater()'s per-cycle deduplication; not part of the API.
      */
     struct GCallLaterKey
     {
         /** @brief Target context GObject. */
-        GObject* context{ nullptr };
+        GObject* context{nullptr};
         /** @brief Type hash code of the callable target. */
-        size_t typeHash{ 0 };
+        size_t typeHash{0};
         /** @brief Size of the callable target representation in bytes. */
-        size_t targetSize{ 0 };
+        size_t targetSize{0};
         /** @brief Binary payload representing the callable target. */
         std::array<uint8_t, 32> targetBytes{};
 
@@ -615,8 +637,8 @@ public:
          */
         bool operator==(const GCallLaterKey& other) const
         {
-            if (context != other.context || typeHash != other.typeHash
-                || targetSize != other.targetSize)
+            if (context != other.context || typeHash != other.typeHash ||
+                targetSize != other.targetSize)
             {
                 return false;
             }
@@ -645,16 +667,14 @@ public:
         }
     };
 
-private:
     /**
      * @brief Internal helper to schedule or update a callLater deferred invocation.
      * @param context Target context object.
      * @param key Key identifying the deferred call.
      * @param invoker Callback executing the call.
      */
-    static void scheduleCallLater(GObject*              context,
-                                  const GCallLaterKey&  key,
-                                  std::function<void()> invoker);
+    static void
+    scheduleCallLater(GObject* context, const GCallLaterKey& key, std::function<void()> invoker);
 
     /**
      * @brief Internal event dispatch plumbing; routes an event to its handler.
@@ -674,33 +694,38 @@ private:
      * @param slot Callback function.
      * @param type Connection type. Thread-safe.
      */
-    static void dispatchMetaCall(GObject*              target,
-                                 std::function<void()> slot,
-                                 G::ConnectionType     type);
+    static void
+    dispatchMetaCall(GObject* target, std::function<void()> slot, G::ConnectionType type);
 
     /** @brief Grants the event queue access to event(), which it alone invokes. */
     friend class GEventDispatcherDefault;
 
-    std::shared_ptr<int>               m_life;
-    std::shared_ptr<GThreadData>       m_threadData;
-    mutable std::mutex                 m_threadDataMutex;
-    std::atomic<GThread*>              m_thread{ nullptr };
-    GObject*                           m_parent;
-    std::string                        m_objectName;
-    mutable std::mutex                 m_nameMutex;
+    /**
+     * @brief Grants the callLater pending-call registry (defined in GObject.cpp) the ability to
+     * name the private GCallLaterKey/GCallLaterKeyHash types its map is keyed on.
+     */
+    friend struct GCallLaterRegistry;
+
+    std::shared_ptr<int> m_life;
+    std::shared_ptr<GThreadData> m_threadData;
+    mutable std::mutex m_threadDataMutex;
+    std::atomic<GThread*> m_thread{nullptr};
+    GObject* m_parent;
+    std::string m_objectName;
+    mutable std::mutex m_nameMutex;
     std::vector<std::function<void()>> m_cleanupCallbacks;
-    std::mutex                         m_cleanupMutex;
-    static std::atomic<int>            s_nextTimerId;
+    std::mutex m_cleanupMutex;
+    static std::atomic<int> s_nextTimerId;
 };
 
-template<typename Signal, typename Receiver, typename Slot>
+template <typename Signal, typename Receiver, typename Slot>
 std::enable_if_t<G::MemberFunctionTraits<Slot>::is_member_function, G::ConnectionHandle>
 GObject::connect(Signal& signal, Receiver* receiver, Slot slot, G::ConnectionType type)
 {
     using SlotClass = typename G::MemberFunctionTraits<Slot>::class_type;
 
-    static_assert(std::is_base_of<GObject, Receiver>::value,
-                  "Receiver must be an instance of GObject.");
+    static_assert(
+        std::is_base_of<GObject, Receiver>::value, "Receiver must be an instance of GObject.");
     static_assert(G::MemberFunctionTraits<Slot>::is_member_function,
                   "Slot must be a member function pointer.");
     static_assert(std::is_base_of<SlotClass, Receiver>::value,
@@ -735,13 +760,13 @@ GObject::connect(Signal& signal, Receiver* receiver, Slot slot, G::ConnectionTyp
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename SlotClass>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                     && std::is_base_of<SlotClass, Receiver>::value
-                     && !std::is_same<SlotClass, Receiver>::value,
+template <typename... SignalArgs, typename Receiver, typename SlotClass>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value,
                  G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  void (SlotClass::*slot)(SignalArgs...),
                  G::ConnectionType type)
 {
@@ -774,13 +799,13 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename SlotClass>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                     && std::is_base_of<SlotClass, Receiver>::value
-                     && !std::is_same<SlotClass, Receiver>::value,
+template <typename... SignalArgs, typename Receiver, typename SlotClass>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value,
                  G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  void (SlotClass::*slot)(SignalArgs...) const,
                  G::ConnectionType type)
 {
@@ -813,13 +838,13 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
-std::enable_if_t<
-    std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-        && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-    G::ConnectionHandle>
+template <typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+                 G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  Ret (SlotClass::*slot)(SignalArgs...),
                  G::ConnectionType type)
 {
@@ -852,13 +877,13 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
-std::enable_if_t<
-    std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-        && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-    G::ConnectionHandle>
+template <typename... SignalArgs, typename Receiver, typename SlotClass, typename Ret>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+                 G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  Ret (SlotClass::*slot)(SignalArgs...) const,
                  G::ConnectionType type)
 {
@@ -891,12 +916,12 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle> GObject::connect(
-    GSignal<SignalArgs...>& signal,
-    Receiver*               receiver,
-    void (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
-    G::ConnectionType type)
+template <typename... SignalArgs, typename Receiver>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+GObject::connect(GSignal<SignalArgs...>& signal,
+                 Receiver* receiver,
+                 void (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
+                 G::ConnectionType type)
 {
     if (!receiver)
     {
@@ -927,12 +952,12 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle> GObject::connect(
-    GSignal<SignalArgs...>& signal,
-    Receiver*               receiver,
-    void (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
-    G::ConnectionType type)
+template <typename... SignalArgs, typename Receiver>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+GObject::connect(GSignal<SignalArgs...>& signal,
+                 Receiver* receiver,
+                 void (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
+                 G::ConnectionType type)
 {
     if (!receiver)
     {
@@ -963,11 +988,11 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename Ret>
+template <typename... SignalArgs, typename Receiver, typename Ret>
 std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value,
                  G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  Ret (G::NonDeduced<Receiver>::*slot)(SignalArgs...),
                  G::ConnectionType type)
 {
@@ -1000,11 +1025,11 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename... SignalArgs, typename Receiver, typename Ret>
+template <typename... SignalArgs, typename Receiver, typename Ret>
 std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value,
                  G::ConnectionHandle>
 GObject::connect(GSignal<SignalArgs...>& signal,
-                 Receiver*               receiver,
+                 Receiver* receiver,
                  Ret (G::NonDeduced<Receiver>::*slot)(SignalArgs...) const,
                  G::ConnectionType type)
 {
@@ -1037,7 +1062,7 @@ GObject::connect(GSignal<SignalArgs...>& signal,
     return signal.connect(wrapper);
 }
 
-template<typename Signal, typename Functor>
+template <typename Signal, typename Functor>
 std::enable_if_t<!G::MemberFunctionTraits<Functor>::is_member_function, G::ConnectionHandle>
 GObject::connect(Signal& signal, GObject* context, Functor slot, G::ConnectionType type)
 {
@@ -1070,18 +1095,21 @@ GObject::connect(Signal& signal, GObject* context, Functor slot, G::ConnectionTy
     return signal.connect(wrapper);
 }
 
-inline void GObject::disconnect(const G::ConnectionHandle& handle) { handle.disconnect(); }
+inline void GObject::disconnect(const G::ConnectionHandle& handle)
+{
+    handle.disconnect();
+}
 
-template<typename Receiver, typename Slot, typename... Args>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                     && G::MemberFunctionTraits<Slot>::is_member_function,
+template <typename Receiver, typename Slot, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     G::MemberFunctionTraits<Slot>::is_member_function,
                  void>
 GObject::callLater(Receiver* receiver, Slot slot, Args&&... args)
 {
     using SlotClass = typename G::MemberFunctionTraits<Slot>::class_type;
 
-    static_assert(std::is_base_of<GObject, Receiver>::value,
-                  "Receiver must be an instance of GObject.");
+    static_assert(
+        std::is_base_of<GObject, Receiver>::value, "Receiver must be an instance of GObject.");
     static_assert(G::MemberFunctionTraits<Slot>::is_member_function,
                   "Slot must be a member function pointer.");
     static_assert(std::is_base_of<SlotClass, Receiver>::value,
@@ -1095,14 +1123,14 @@ GObject::callLater(Receiver* receiver, Slot slot, Args&&... args)
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(Slot).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(Slot).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1112,10 +1140,10 @@ GObject::callLater(Receiver* receiver, Slot slot, Args&&... args)
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename SlotClass, typename... Args>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                     && std::is_base_of<SlotClass, Receiver>::value
-                     && !std::is_same<SlotClass, Receiver>::value,
+template <typename Receiver, typename SlotClass, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value,
                  void>
 GObject::callLater(Receiver* receiver,
                    void (SlotClass::*slot)(G::NonDeduced<Args>...),
@@ -1127,14 +1155,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(void (SlotClass::*)(Args...)).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(void (SlotClass::*)(Args...)).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1144,10 +1172,10 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename SlotClass, typename... Args>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value
-                     && std::is_base_of<SlotClass, Receiver>::value
-                     && !std::is_same<SlotClass, Receiver>::value,
+template <typename Receiver, typename SlotClass, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value,
                  void>
 GObject::callLater(Receiver* receiver,
                    void (SlotClass::*slot)(G::NonDeduced<Args>...) const,
@@ -1159,14 +1187,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(void (SlotClass::*)(Args...) const).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(void (SlotClass::*)(Args...) const).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1176,11 +1204,11 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename SlotClass, typename Ret, typename... Args>
-std::enable_if_t<
-    std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-        && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-    void>
+template <typename Receiver, typename SlotClass, typename Ret, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+                 void>
 GObject::callLater(Receiver* receiver,
                    Ret (SlotClass::*slot)(G::NonDeduced<Args>...),
                    Args&&... args)
@@ -1191,14 +1219,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(Ret (SlotClass::*)(Args...)).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(Ret (SlotClass::*)(Args...)).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1208,11 +1236,11 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename SlotClass, typename Ret, typename... Args>
-std::enable_if_t<
-    std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::value
-        && !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-    void>
+template <typename Receiver, typename SlotClass, typename Ret, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
+                     std::is_base_of<SlotClass, Receiver>::value &&
+                     !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
+                 void>
 GObject::callLater(Receiver* receiver,
                    Ret (SlotClass::*slot)(G::NonDeduced<Args>...) const,
                    Args&&... args)
@@ -1223,14 +1251,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(Ret (SlotClass::*)(Args...) const).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(Ret (SlotClass::*)(Args...) const).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1240,11 +1268,11 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename... Args>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callLater(
-    Receiver* receiver,
-    void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
-    Args&&... args)
+template <typename Receiver, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
+GObject::callLater(Receiver* receiver,
+                   void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
+                   Args&&... args)
 {
     if (!receiver)
     {
@@ -1252,14 +1280,14 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callL
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(void (Receiver::*)(Args...)).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(void (Receiver::*)(Args...)).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1269,11 +1297,11 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callL
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename... Args>
-std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callLater(
-    Receiver* receiver,
-    void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
-    Args&&... args)
+template <typename Receiver, typename... Args>
+std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
+GObject::callLater(Receiver* receiver,
+                   void (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
+                   Args&&... args)
 {
     if (!receiver)
     {
@@ -1281,14 +1309,14 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callL
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(void (Receiver::*)(Args...) const).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(void (Receiver::*)(Args...) const).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1298,7 +1326,7 @@ std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void> GObject::callL
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename Ret, typename... Args>
+template <typename Receiver, typename Ret, typename... Args>
 std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value, void>
 GObject::callLater(Receiver* receiver,
                    Ret (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...),
@@ -1310,14 +1338,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(Ret (Receiver::*)(Args...)).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(Ret (Receiver::*)(Args...)).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1327,7 +1355,7 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Receiver, typename Ret, typename... Args>
+template <typename Receiver, typename Ret, typename... Args>
 std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value, void>
 GObject::callLater(Receiver* receiver,
                    Ret (G::NonDeduced<Receiver>::*slot)(G::NonDeduced<Args>...) const,
@@ -1339,14 +1367,14 @@ GObject::callLater(Receiver* receiver,
     }
 
     GCallLaterKey key;
-    key.context    = receiver;
-    key.typeHash   = typeid(Ret (Receiver::*)(Args...) const).hash_code();
+    key.context = receiver;
+    key.typeHash = typeid(Ret (Receiver::*)(Args...) const).hash_code();
     key.targetSize = sizeof(slot);
     static_assert(sizeof(slot) <= 32, "Member function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &slot, sizeof(slot));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [receiver, slot, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([receiver, slot](auto&&... a)
                    { (receiver->*slot)(std::forward<decltype(a)>(a)...); },
@@ -1356,9 +1384,9 @@ GObject::callLater(Receiver* receiver,
     scheduleCallLater(receiver, key, invoker);
 }
 
-template<typename Func, typename... Args>
-std::enable_if_t<std::is_pointer<Func>::value
-                     && std::is_function<std::remove_pointer_t<Func>>::value,
+template <typename Func, typename... Args>
+std::enable_if_t<std::is_pointer<Func>::value &&
+                     std::is_function<std::remove_pointer_t<Func>>::value,
                  void>
 GObject::callLater(GObject* context, Func func, Args&&... args)
 {
@@ -1371,14 +1399,14 @@ GObject::callLater(GObject* context, Func func, Args&&... args)
     }
 
     GCallLaterKey key;
-    key.context    = context;
-    key.typeHash   = typeid(Func).hash_code();
+    key.context = context;
+    key.typeHash = typeid(Func).hash_code();
     key.targetSize = sizeof(func);
     static_assert(sizeof(func) <= 32, "Function pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &func, sizeof(func));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [func, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [func, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([func](auto&&... a) { (*func)(std::forward<decltype(a)>(a)...); },
                    std::move(tupleArgs));
@@ -1387,7 +1415,7 @@ GObject::callLater(GObject* context, Func func, Args&&... args)
     scheduleCallLater(context, key, invoker);
 }
 
-template<typename... SignalArgs, typename... Args>
+template <typename... SignalArgs, typename... Args>
 void GObject::callLater(GObject* context, GSignal<SignalArgs...>& signal, Args&&... args)
 {
     static_assert(std::is_invocable_v<GSignal<SignalArgs...>, Args...>,
@@ -1401,14 +1429,14 @@ void GObject::callLater(GObject* context, GSignal<SignalArgs...>& signal, Args&&
     GSignal<SignalArgs...>* sigPtr = &signal;
 
     GCallLaterKey key;
-    key.context    = context;
-    key.typeHash   = typeid(GSignal<SignalArgs...>).hash_code();
+    key.context = context;
+    key.typeHash = typeid(GSignal<SignalArgs...>).hash_code();
     key.targetSize = sizeof(sigPtr);
     static_assert(sizeof(sigPtr) <= 32, "Signal pointer exceeds key size limit.");
     std::memcpy(key.targetBytes.data(), &sigPtr, sizeof(sigPtr));
 
     auto tupleArgs = std::make_tuple(std::forward<Args>(args)...);
-    auto invoker   = [sigPtr, tupleArgs = std::move(tupleArgs)]() mutable
+    auto invoker = [sigPtr, tupleArgs = std::move(tupleArgs)]() mutable
     {
         std::apply([sigPtr](auto&&... a) { sigPtr->emit(std::forward<decltype(a)>(a)...); },
                    std::move(tupleArgs));
@@ -1417,18 +1445,18 @@ void GObject::callLater(GObject* context, GSignal<SignalArgs...>& signal, Args&&
     scheduleCallLater(context, key, invoker);
 }
 
-template<typename Target, typename... Args>
-std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function
-                     && !(std::is_pointer<Target>::value
-                          && std::is_function<std::remove_pointer_t<Target>>::value)
-                     && !G::IsGSignal<std::decay_t<Target>>::value,
+template <typename Target, typename... Args>
+std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function &&
+                     !(std::is_pointer<Target>::value &&
+                       std::is_function<std::remove_pointer_t<Target>>::value) &&
+                     !G::IsGSignal<std::decay_t<Target>>::value,
                  void>
 GObject::callLater(GObject* context, Target&& target, Args&&... args)
 {
-    (void) context;
-    (void) target;
-    static_assert(sizeof(Target) == 0,
-                  "Lambdas and general functors are not allowed in callLater.");
+    (void)context;
+    (void)target;
+    static_assert(
+        sizeof(Target) == 0, "Lambdas and general functors are not allowed in callLater.");
 }
 
 #endif // GOBJECT_H

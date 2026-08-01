@@ -10,9 +10,7 @@ thread_local GThread* GThread::s_currentThread = nullptr;
 
 GThread::GThread(GObject* parent)
 : GObject(parent)
-{
-    m_data = std::make_shared<GThreadData>();
-}
+{ m_data = std::make_shared<GThreadData>(); }
 
 GThread::~GThread()
 {
@@ -135,20 +133,6 @@ bool GThread::isFinished() const { return m_finished.load(); }
 GThread* GThread::currentThread() { return s_currentThread; }
 
 GAbstractEventDispatcher* GThread::eventDispatcher() const { return m_data->dispatcher.load(); }
-
-void GThread::setEventDispatcher(GAbstractEventDispatcher* dispatcher)
-{
-    if (m_data->ownsDispatcher)
-    {
-        GAbstractEventDispatcher* oldDisp = m_data->dispatcher.exchange(dispatcher);
-        delete oldDisp;
-        m_data->ownsDispatcher = false;
-    }
-    else
-    {
-        m_data->dispatcher.store(dispatcher);
-    }
-}
 
 void GThread::run() { exec(); }
 

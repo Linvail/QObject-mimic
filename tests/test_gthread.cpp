@@ -195,21 +195,28 @@ TEST(GThreadTest, MultipleThreadsExecution)
 }
 
 /**
- * @brief Tests custom event dispatcher assignment and retrieval.
+ * @brief Tests event dispatcher lifetime across a thread's own start/finish cycle.
  *
- * Verifies GThread::setEventDispatcher() and GThread::eventDispatcher() for inspecting and
- * customizing the thread dispatcher.
+ * Replaces the former EventDispatcherSetAndGet test, which drove the removed
+ * GThread::setEventDispatcher(). That setter could delete a dispatcher a running
+ * exec()/processEvents() loop was still calling into, so a thread now creates and owns its
+ * dispatcher itself and eventDispatcher() is read-only. This verifies that contract: none before
+ * start(), one owned while running, and cleaned up on exit (the last part relies on
+ * AddressSanitizer/LeakSanitizer in the debug build to catch a leak or double free).
  */
-TEST(GThreadTest, EventDispatcherSetAndGet)
+TEST(GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle)
 {
     GThread thread;
-    EXPECT_EQ(thread.eventDispatcher(), nullptr);
+    EXPECT_EQ(thread.eventDispatcher(), nullptr) << "no dispatcher should exist before start()";
 
-    auto                      customDispatcher = std::make_unique<GEventDispatcherDefault>();
-    GAbstractEventDispatcher* ptr              = customDispatcher.get();
-    thread.setEventDispatcher(ptr);
-    EXPECT_EQ(thread.eventDispatcher(), ptr);
+    thread.start();
+    while (!thread.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+    EXPECT_NE(thread.eventDispatcher(), nullptr) << "start() should create the thread's dispatcher";
 
-    thread.setEventDispatcher(nullptr);
-    EXPECT_EQ(thread.eventDispatcher(), nullptr);
+    thread.quit();
+    thread.wait();
+    EXPECT_TRUE(thread.isFinished());
 }
