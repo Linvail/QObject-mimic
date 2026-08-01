@@ -3,13 +3,14 @@
 
 #include "GObject.h"
 #include "GSignal.h"
-#include <thread>
-#include <memory>
+
 #include <atomic>
-#include <mutex>
-#include <condition_variable>
 #include <climits>
+#include <condition_variable>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 class GAbstractEventDispatcher;
 
@@ -21,9 +22,8 @@ class GThread : public GObject
 public:
     /**
      * @brief Constructs a new thread object.
-     * @param parent The parent object.
      */
-    GThread(GObject* parent = nullptr);
+    GThread();
 
     /**
      * @brief Destroys the thread, waiting for it to finish if running.
@@ -100,7 +100,7 @@ public:
      * @param args Arguments to pass.
      * @return Pointer to the newly created GThread. Thread-safe.
      */
-    template<typename Function, typename... Args>
+    template <typename Function, typename... Args>
     static GThread* create(Function&& f, Args&&... args);
 
 protected:
@@ -120,23 +120,26 @@ public:
      * @brief Gets the thread's internal data container holding the event dispatcher.
      * @return Shared pointer to the thread data.
      */
-    std::shared_ptr<GThreadData> threadData() const { return m_data; }
+    std::shared_ptr<GThreadData> threadData() const
+    {
+        return m_data;
+    }
 
 private:
     std::unique_ptr<std::thread> m_thread;
     std::shared_ptr<GThreadData> m_data;
-    std::atomic<bool>            m_running{ false };
-    std::atomic<bool>            m_finished{ false };
-    std::atomic<bool>            m_exiting{ false };
-    std::atomic<int>             m_exitCode{ 0 };
-    mutable std::mutex           m_waitMutex;
-    std::condition_variable      m_waitCv;
+    std::atomic<bool> m_running{false};
+    std::atomic<bool> m_finished{false};
+    std::atomic<bool> m_exiting{false};
+    std::atomic<int> m_exitCode{0};
+    mutable std::mutex m_waitMutex;
+    std::condition_variable m_waitCv;
 
     static thread_local GThread* s_currentThread;
     friend class GCoreApplication;
 };
 
-template<typename Function, typename... Args>
+template <typename Function, typename... Args>
 GThread* GThread::create(Function&& f, Args&&... args)
 {
     auto task = std::bind(std::forward<Function>(f), std::forward<Args>(args)...);
@@ -145,7 +148,7 @@ GThread* GThread::create(Function&& f, Args&&... args)
     {
     public:
         GFuncThread(std::function<void()> fn)
-        : m_fn(std::move(fn))
+            : m_fn(std::move(fn))
         {
         }
 
@@ -167,4 +170,4 @@ GThread* GThread::create(Function&& f, Args&&... args)
     return threadObj;
 }
 
-#endif  // GTHREAD_H
+#endif // GTHREAD_H

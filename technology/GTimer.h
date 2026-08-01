@@ -11,10 +11,9 @@ class GTimer : public GObject
 {
 public:
     /**
-     * @brief Constructs a timer with optional parent.
-     * @param parent Parent object.
+     * @brief Constructs a timer.
      */
-    GTimer(GObject* parent = nullptr);
+    GTimer();
 
     /**
      * @brief Destroys the timer.
@@ -84,8 +83,7 @@ public:
      * @param msec Delay in milliseconds.
      * @param functor Slot function to execute. Thread-safe.
      */
-    template<typename Functor>
-    static void singleShot(int msec, Functor functor);
+    template <typename Functor> static void singleShot(int msec, Functor functor);
 
     /**
      * @brief Fires a single-shot timer executing a functor in context object's thread.
@@ -94,7 +92,7 @@ public:
      * @param context Target context GObject.
      * @param functor Slot function to execute. Thread-safe.
      */
-    template<typename Functor>
+    template <typename Functor>
     static void singleShot(int msec, const GObject* context, Functor functor);
 
     /**
@@ -105,7 +103,7 @@ public:
      * @param receiver Target receiver object.
      * @param method Member function pointer to execute. Thread-safe.
      */
-    template<typename Receiver, typename MemberFunc>
+    template <typename Receiver, typename MemberFunc>
     static void singleShot(int msec, const Receiver* receiver, MemberFunc method);
 
 protected:
@@ -116,20 +114,19 @@ protected:
     virtual void timerEvent(GTimerEvent* event) override;
 
 private:
-    int  m_interval{ 0 };
-    int  m_timerId{ -1 };
-    bool m_singleShot{ false };
-    bool m_active{ false };
+    int m_interval{0};
+    int m_timerId{-1};
+    bool m_singleShot{false};
+    bool m_active{false};
 };
 
-template<typename Functor>
-void GTimer::singleShot(int msec, Functor functor)
+template <typename Functor> void GTimer::singleShot(int msec, Functor functor)
 {
     class GSingleShotHelper : public GObject
     {
     public:
         GSingleShotHelper(int ms, Functor fn)
-        : m_fn(std::move(fn))
+            : m_fn(std::move(fn))
         {
             m_id = startTimer(ms);
         }
@@ -145,11 +142,14 @@ void GTimer::singleShot(int msec, Functor functor)
         }
 
     public:
-        int timerId() const { return m_id; }
+        int timerId() const
+        {
+            return m_id;
+        }
 
     private:
         Functor m_fn;
-        int     m_id{ -1 };
+        int m_id{-1};
     };
     auto* helper = new GSingleShotHelper(msec, functor);
     if (helper->timerId() == -1)
@@ -158,7 +158,7 @@ void GTimer::singleShot(int msec, Functor functor)
     }
 }
 
-template<typename Functor>
+template <typename Functor>
 void GTimer::singleShot(int msec, const GObject* context, Functor functor)
 {
     if (!context)
@@ -169,7 +169,7 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
     {
     public:
         GSingleShotContextHelper(GObject* ctx, int ms, Functor fn)
-        : m_fn(std::move(fn))
+            : m_fn(std::move(fn))
         {
             if (ctx)
             {
@@ -189,11 +189,14 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
         }
 
     public:
-        int timerId() const { return m_id; }
+        int timerId() const
+        {
+            return m_id;
+        }
 
     private:
         Functor m_fn;
-        int     m_id{ -1 };
+        int m_id{-1};
     };
     auto* helper = new GSingleShotContextHelper(const_cast<GObject*>(context), msec, functor);
     if (helper->timerId() == -1)
@@ -202,7 +205,7 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
     }
 }
 
-template<typename Receiver, typename MemberFunc>
+template <typename Receiver, typename MemberFunc>
 void GTimer::singleShot(int msec, const Receiver* receiver, MemberFunc method)
 {
     if (!receiver)

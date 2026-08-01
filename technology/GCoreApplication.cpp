@@ -1,20 +1,21 @@
 #include "GCoreApplication.h"
+
 #include "GAbstractEventDispatcher.h"
 #include "GEventDispatcherDefault.h"
 #if defined(_WIN32)
-#include "GEventDispatcherWin32.h"
+    #include "GEventDispatcherWin32.h"
 #elif defined(__linux__)
-#include "GEventDispatcherLinux.h"
+    #include "GEventDispatcherLinux.h"
 #endif
 #include "GEvent.h"
 
 GCoreApplication* GCoreApplication::s_instance = nullptr;
 
 GCoreApplication::GCoreApplication(int& argc, char** argv)
-: GObject(nullptr)
+    : GObject()
 {
-    (void) argc;
-    (void) argv;
+    (void)argc;
+    (void)argv;
     s_instance = this;
 
 #if defined(_WIN32)
@@ -27,7 +28,7 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
     m_mainThread = std::make_unique<GThread>();
 
     m_mainThread->m_data->dispatcher = m_dispatcher.get();
-    GThread::s_currentThread         = m_mainThread.get();
+    GThread::s_currentThread = m_mainThread.get();
 
     this->moveToThread(m_mainThread.get());
 }
@@ -36,11 +37,14 @@ GCoreApplication::~GCoreApplication()
 {
     this->moveToThread(nullptr);
     m_mainThread->m_data->dispatcher = nullptr;
-    GThread::s_currentThread         = nullptr;
-    s_instance                 = nullptr;
+    GThread::s_currentThread = nullptr;
+    s_instance = nullptr;
 }
 
-GCoreApplication* GCoreApplication::instance() { return s_instance; }
+GCoreApplication* GCoreApplication::instance()
+{
+    return s_instance;
+}
 
 int GCoreApplication::exec()
 {

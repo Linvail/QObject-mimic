@@ -1,16 +1,19 @@
 #include "GThread.h"
+
 #include "GEventDispatcherDefault.h"
 #if defined(_WIN32)
-#include "GEventDispatcherWin32.h"
+    #include "GEventDispatcherWin32.h"
 #elif defined(__linux__)
-#include "GEventDispatcherLinux.h"
+    #include "GEventDispatcherLinux.h"
 #endif
 
 thread_local GThread* GThread::s_currentThread = nullptr;
 
-GThread::GThread(GObject* parent)
-: GObject(parent)
-{ m_data = std::make_shared<GThreadData>(); }
+GThread::GThread()
+    : GObject()
+{
+    m_data = std::make_shared<GThreadData>();
+}
 
 GThread::~GThread()
 {
@@ -78,7 +81,10 @@ void GThread::start()
         });
 }
 
-void GThread::quit() { exit(0); }
+void GThread::quit()
+{
+    exit(0);
+}
 
 void GThread::exit(int returnCode)
 {
@@ -116,7 +122,7 @@ bool GThread::wait(unsigned long time)
     else
     {
         std::unique_lock<std::mutex> lock(m_waitMutex);
-        bool                         completed = m_waitCv.wait_for(
+        bool completed = m_waitCv.wait_for(
             lock, std::chrono::milliseconds(time), [this] { return m_finished.load(); });
         if (completed && m_thread->joinable())
         {
@@ -126,15 +132,30 @@ bool GThread::wait(unsigned long time)
     }
 }
 
-bool GThread::isRunning() const { return m_running.load(); }
+bool GThread::isRunning() const
+{
+    return m_running.load();
+}
 
-bool GThread::isFinished() const { return m_finished.load(); }
+bool GThread::isFinished() const
+{
+    return m_finished.load();
+}
 
-GThread* GThread::currentThread() { return s_currentThread; }
+GThread* GThread::currentThread()
+{
+    return s_currentThread;
+}
 
-GAbstractEventDispatcher* GThread::eventDispatcher() const { return m_data->dispatcher.load(); }
+GAbstractEventDispatcher* GThread::eventDispatcher() const
+{
+    return m_data->dispatcher.load();
+}
 
-void GThread::run() { exec(); }
+void GThread::run()
+{
+    exec();
+}
 
 int GThread::exec()
 {

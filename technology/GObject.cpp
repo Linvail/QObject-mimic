@@ -36,9 +36,8 @@ std::unordered_map<GObject::GCallLaterKey,
 
 std::atomic<int> GObject::s_nextTimerId{1};
 
-GObject::GObject(GObject* parent)
+GObject::GObject()
     : m_life(std::make_shared<int>(0))
-    , m_parent(parent)
 {
     GThread* current = GThread::currentThread();
     m_thread.store(current);

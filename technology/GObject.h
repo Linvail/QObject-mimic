@@ -50,10 +50,9 @@ class GObject
 {
 public:
     /**
-     * @brief Constructs an object with the given parent.
-     * @param parent The parent object.
+     * @brief Constructs an object.
      */
-    GObject(GObject* parent = nullptr);
+    GObject();
 
     /**
      * @brief Destroys the object and triggers all registered cleanup callbacks.
@@ -710,7 +709,6 @@ private:
     std::shared_ptr<GThreadData> m_threadData;
     mutable std::mutex m_threadDataMutex;
     std::atomic<GThread*> m_thread{nullptr};
-    GObject* m_parent;
     std::string m_objectName;
     mutable std::mutex m_nameMutex;
     std::vector<std::function<void()>> m_cleanupCallbacks;
