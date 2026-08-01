@@ -1,10 +1,11 @@
 from waflib import Options, Logs
 import platform, os
 
+
 def setup_build_env(bld):
     target_platform = bld.target_platform
     arch = bld.target_arch
-    compiler = 'gcc'
+    compiler = "gcc"
     host_platform = platform.system()
     if host_platform == "Windows":
         compiler = "msvc"
@@ -17,7 +18,13 @@ def setup_build_env(bld):
     else:
         bld.fatal("Unsupported host platform: %s" % host_platform)
 
-    env_name = "%s-%s-%s-%s-%s" % (target_platform, arch, host_platform, compiler, bld.mode)
+    env_name = "%s-%s-%s-%s-%s" % (
+        target_platform,
+        arch,
+        host_platform,
+        compiler,
+        bld.mode,
+    )
 
     if env_name not in bld.all_envs:
         bld.fatal("Environment '%s' does not exist." % env_name)
@@ -25,18 +32,6 @@ def setup_build_env(bld):
     env = bld.all_envs[env_name].derive()
     bld.set_env(env)
     return env
-
-
-def build_demo(bld):
-    setup_build_env(bld)
-    bld.recurse("submodules/external")
-    bld.recurse("technology")
-    kw = {}
-    kw["features"] = ["cxx", "cxxprogram", "debug-info"]
-    kw["use"] = ["GQT"]
-    kw["source"] = ["src/main.cpp"]
-
-    bld(target='Demo', **kw)
 
 
 def build_tests(bld):
@@ -47,7 +42,6 @@ def build_tests(bld):
 
 
 product_table = {
-    "Demo" : build_demo,
     "Tests": build_tests,
 }
 
