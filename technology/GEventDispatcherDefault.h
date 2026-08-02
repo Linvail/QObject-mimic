@@ -52,6 +52,13 @@ public:
      */
     virtual void interrupt() override;
 
+    /**
+     * @brief Dispatches any pending deferred-delete events, destroying their receivers.
+     *
+     * Note: Thread-safe. Intended to run on the dispatcher's own thread.
+     */
+    virtual void processDeferredDeletes() override;
+
 protected:
     // Mirrors the access level GAbstractEventDispatcher gives these. The base class's access
     // already governs every call made through the GAbstractEventDispatcher* that
@@ -94,6 +101,15 @@ protected:
      */
     virtual void removeEventsForReceiver(GObject* receiver) override;
 
+    /**
+     * @brief Unregisters the receiver's timers and returns them for re-registration elsewhere.
+     * @param receiver The receiver whose timers should be taken.
+     * @return The removed registrations; empty if the receiver had none.
+     *
+     * Note: Thread-safe.
+     */
+    virtual std::vector<TimerRegistration> takeTimersForReceiver(GObject* receiver) override;
+
     friend class GObject;
 
 private:
@@ -120,6 +136,10 @@ private:
     // call currently sleeping in wait_for() re-evaluates its wait deadline instead of sleeping
     // for the stale duration computed before the change.
     bool                    m_timersChanged{ false };
+    // Set (under m_mutex) by wakeUp() and consumed by processEvents() once it returns from
+    // waiting. Needed because the wait is predicate-based: without a state change to observe, a
+    // bare notify_all() from wakeUp() cannot end the wait.
+    bool                    m_wakeUpRequested{ false };
 };
 
 #endif // GEVENTDISPATCHERDEFAULT_H

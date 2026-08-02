@@ -46,16 +46,17 @@ void GThread::start()
             s_currentThread = this;
             this->moveToThread(this);
 
-            if (!m_data->dispatcher.load())
+            bool createdDispatcher = false;
+            if (!m_data->dispatcher())
             {
 #if defined(_WIN32)
-                m_data->dispatcher.store(new GEventDispatcherWin32());
+                m_data->setDispatcher(std::make_shared<GEventDispatcherWin32>());
 #elif defined(__linux__)
-                m_data->dispatcher.store(new GEventDispatcherLinux());
+                m_data->setDispatcher(std::make_shared<GEventDispatcherLinux>());
 #else
-                m_data->dispatcher.store(new GEventDispatcherDefault());
+                m_data->setDispatcher(std::make_shared<GEventDispatcherDefault>());
 #endif
-                m_data->ownsDispatcher = true;
+                createdDispatcher = true;
             }
 
             started.emit();
@@ -64,11 +65,24 @@ void GThread::start()
 
             finished.emit();
 
-            if (m_data->ownsDispatcher)
+            // Drain deferred deletes before letting go of the dispatcher, mirroring Qt's
+            // QThreadPrivate::finish(), which calls sendPostedEvents(nullptr, DeferredDelete)
+            // right after emitting finished() and before cleanup() destroys the dispatcher.
+            // Without this, anything that called deleteLater() before the loop stopped is never
+            // destroyed: the dispatcher's destructor can free the queued events but has no way
+            // to free their receivers.
+            if (auto disp = m_data->dispatcher())
             {
-                GAbstractEventDispatcher* disp = m_data->dispatcher.exchange(nullptr);
-                delete disp;
-                m_data->ownsDispatcher = false;
+                disp->processDeferredDeletes();
+            }
+
+            if (createdDispatcher)
+            {
+                // Just drop this thread's reference. Any other thread that is part-way through a
+                // call still holds its own strong reference from GThreadData::dispatcher(), so
+                // the dispatcher stays alive until that call finishes rather than being freed
+                // underneath it.
+                m_data->setDispatcher(nullptr);
             }
 
             m_running.store(false);
@@ -90,7 +104,7 @@ void GThread::exit(int returnCode)
 {
     m_exitCode.store(returnCode);
     m_exiting.store(true);
-    GAbstractEventDispatcher* dispatcher = m_data->dispatcher.load();
+    auto dispatcher = m_data->dispatcher();
     if (dispatcher)
     {
         dispatcher->interrupt();
@@ -147,9 +161,9 @@ GThread* GThread::currentThread()
     return s_currentThread;
 }
 
-GAbstractEventDispatcher* GThread::eventDispatcher() const
+std::shared_ptr<GAbstractEventDispatcher> GThread::eventDispatcher() const
 {
-    return m_data->dispatcher.load();
+    return m_data->dispatcher();
 }
 
 void GThread::run()
@@ -159,11 +173,13 @@ void GThread::run()
 
 int GThread::exec()
 {
-    GAbstractEventDispatcher* dispatcher = m_data->dispatcher.load();
+    // Re-fetched each iteration, and held as a strong reference across processEvents() so the
+    // dispatcher cannot be destroyed mid-call.
+    auto dispatcher = m_data->dispatcher();
     while (!m_exiting.load() && dispatcher)
     {
         dispatcher->processEvents();
-        dispatcher = m_data->dispatcher.load();
+        dispatcher = m_data->dispatcher();
     }
     return m_exitCode.load();
 }

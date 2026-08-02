@@ -194,10 +194,13 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
         std::this_thread::yield();
     }
 
+    // Configure each timer *before* handing it to the worker: once it lives there, its members
+    // belong to that thread and touching them from here would be a plain data race (GTimer has no
+    // locking, exactly like QTimer). Arming likewise happens on the worker, via callLater(),
+    // because start() is thread-confined.
     GTimer longTimer;
     longTimer.moveToThread(&workerThread);
-    longTimer.setInterval(3000);
-    longTimer.start();
+    GObject::callLater(&longTimer, &GTimer::start, 3000);
 
     // Give the worker thread's exec() loop a chance to notice the long timer and enter its
     // ~3s wait_for() sleep before we register the short timer below.
@@ -210,8 +213,8 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
     auto                                                 fireFuture = firePromise.get_future();
 
     GTimer shortTimer;
+    shortTimer.setSingleShot(true); // configure before the object belongs to another thread
     shortTimer.moveToThread(&workerThread);
-    shortTimer.setSingleShot(true);
     GObject::connect(
         shortTimer.timeout,
         &context,
@@ -219,8 +222,7 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
         G::DirectConnection);
 
     auto shortTimerStart = std::chrono::steady_clock::now();
-    shortTimer.setInterval(50);
-    shortTimer.start();
+    GObject::callLater(&shortTimer, &GTimer::start, 50);
 
     auto status = fireFuture.wait_for(std::chrono::milliseconds(1500));
     ASSERT_EQ(status, std::future_status::ready)
@@ -234,6 +236,24 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
     EXPECT_LT(elapsedMs, 1500) << "short timer fired after " << elapsedMs
                                << "ms; expected well under the unrelated 3000ms timer's "
                                   "interval.";
+
+    // Stop the still-running long timer on the thread that owns it. Leaving it to ~GTimer() would
+    // call stop() from this thread, which killTimer() refuses -- correct behaviour (Qt warns the
+    // same way), but this test should not be the thing committing the misuse.
+    std::promise<void> stoppedPromise;
+    auto               stoppedFuture = stoppedPromise.get_future();
+    GSignal<>          stopSignal;
+    GObject::connect(
+        stopSignal,
+        &context,
+        [&longTimer, &stoppedPromise]()
+        {
+            longTimer.stop();
+            stoppedPromise.set_value();
+        },
+        G::QueuedConnection);
+    stopSignal.emit();
+    EXPECT_EQ(stoppedFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
 
     workerThread.quit();
     workerThread.wait();
@@ -274,6 +294,7 @@ TEST(GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly)
 class DefectTestableDispatcher : public GEventDispatcherDefault
 {
 public:
+    using GEventDispatcherDefault::postEvent;
     using GEventDispatcherDefault::registerTimer;
 };
 
@@ -316,23 +337,59 @@ TEST(GEventDispatcherDefaultDefectTest, InterruptDuringTimerCollectionStress)
 }
 
 // ---------------------------------------------------------------------------------------------
-// Defect: data race on GObject::m_threadData (written by moveToThread(), read unsynchronized
-// elsewhere).
+// Defect: moveToThread() left the object's active timers registered with the thread it left, so
+// timerEvent() kept being delivered on a thread the object no longer lived in.
 // ---------------------------------------------------------------------------------------------
 
 /**
- * @brief Best-effort stress test targeting the data race on GObject::m_threadData, previously
- * written by moveToThread() and read -- with no synchronization -- by threadData(),
- * startTimer(), killTimer(), deleteLater(), and dispatchMetaCall(), despite all of those being
- * documented thread-safe.
- *
- * Concurrent unsynchronized read/write of a std::shared_ptr is undefined behavior and, in
- * practice, can corrupt the control block (torn reference counts), which typically surfaces as
- * heap corruption / a double-free crash catchable by AddressSanitizer even without
- * ThreadSanitizer, given enough iterations. Best validated under one of those sanitizers; the
- * check below only confirms the scenario runs to completion without crashing.
+ * @brief Records which thread its timerEvent() is delivered on.
  */
-TEST(GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress)
+class DefectTimerAffinityProbe : public GObject
+{
+public:
+    /**
+     * @brief Gets the thread the most recent timer event arrived on.
+     * @return Delivering thread, or nullptr if no event has arrived.
+     */
+    GThread* firingThread() const { return m_firingThread.load(); }
+
+    /**
+     * @brief Gets how many timer events have been delivered.
+     * @return Delivery count.
+     */
+    int fireCount() const { return m_fireCount.load(); }
+
+protected:
+    /**
+     * @brief Records the delivering thread.
+     * @param event Unused.
+     */
+    virtual void timerEvent(GTimerEvent* event) override
+    {
+        (void) event;
+        m_firingThread.store(GThread::currentThread());
+        m_fireCount.fetch_add(1);
+    }
+
+private:
+    std::atomic<GThread*> m_firingThread{ nullptr };
+    std::atomic<int>      m_fireCount{ 0 };
+};
+
+/**
+ * @brief Verifies moveToThread() carries active timers to the destination thread.
+ *
+ * Qt documents this: "all active timers for the object will be reset. The timers are first stopped
+ * in the current thread and restarted (with the same interval) in the targetThread." Without it,
+ * a moved object's timers keep firing on the thread it left -- delivering timerEvent() somewhere
+ * the object no longer lives, which is precisely what the thread-confinement rules exist to
+ * prevent.
+ *
+ * The timer is started on threadA (start is thread-confined, so via callLater), the object is then
+ * moved to threadB by threadA (the only thread allowed to move it), and the test asserts the
+ * events subsequently arrive on threadB.
+ */
+TEST(GObjectDefectTest, MoveToThreadCarriesActiveTimersToTheNewThread)
 {
     GThread threadA;
     threadA.start();
@@ -348,56 +405,131 @@ TEST(GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress)
         std::this_thread::yield();
     }
 
-    GObject subject;
+    DefectTimerAffinityProbe probe;
+    ASSERT_TRUE(probe.moveToThread(&threadA)); // legal: no affinity yet
 
-    constexpr int     kIterations = 2000;
-    std::atomic<bool> stop{ false };
+    // Arm on threadA, then let it fire there at least once.
+    GObject::callLater(&probe, &GObject::startTimer, 10);
 
-    // Continuously bounce the subject's thread affinity between threadA and threadB.
-    std::thread mover(
-        [&subject, &threadA, &threadB, &stop]()
-        {
-            bool useA = true;
-            while (!stop.load(std::memory_order_acquire))
-            {
-                subject.moveToThread(useA ? &threadA : &threadB);
-                useA = !useA;
-            }
-        });
-
-    // Concurrently hammer every public accessor that reads m_threadData.
-    std::thread reader(
-        [&subject, &stop]()
-        {
-            while (!stop.load(std::memory_order_acquire))
-            {
-                (void) subject.threadData();
-                (void) subject.thread();
-                int timerId = subject.startTimer(1000000); // never expected to fire in this test
-                if (timerId != -1)
-                {
-                    subject.killTimer(timerId);
-                }
-            }
-        });
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-    // A few thousand more moveToThread() calls from this third thread too, so the race isn't
-    // limited to just `mover` vs `reader`.
-    for (int i = 0; i < kIterations; ++i)
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (probe.fireCount() == 0 && std::chrono::steady_clock::now() < deadline)
     {
-        subject.moveToThread(i % 2 == 0 ? &threadA : &threadB);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_GT(probe.fireCount(), 0) << "timer never fired on its original thread.";
+    ASSERT_EQ(probe.firingThread(), &threadA) << "timer did not fire on the thread it was started on.";
+
+    // Only threadA may move it, so ask threadA to do so.
+    const int countBeforeMove = probe.fireCount();
+    GObject::callLater(&probe, &GObject::moveToThread, &threadB);
+
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (probe.firingThread() != &threadB && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    stop.store(true, std::memory_order_release);
-    mover.join();
-    reader.join();
+    EXPECT_EQ(probe.firingThread(), &threadB)
+        << "after moveToThread(), the timer kept firing on the old thread -- active timers were "
+           "not carried across.";
+    EXPECT_GT(probe.fireCount(), countBeforeMove) << "the timer stopped firing entirely after the move.";
+
+    // Stop it on its current owner before tearing down.
+    GObject::callLater(&probe, &GObject::moveToThread, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     threadA.quit();
     threadA.wait();
     threadB.quit();
     threadB.wait();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: data race on GObject::m_threadData (written by moveToThread(), read unsynchronized
+// elsewhere).
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Thread that repeatedly re-homes its own object, to drive the m_threadData write side.
+ *
+ * moveToThread() is now thread-confined, so only the thread that owns an object may re-home it.
+ * A thread *can* legally toggle its own object between itself and "no affinity": releasing it is
+ * allowed because the caller is the current owner, and re-adopting it is allowed by the
+ * unowned-object exception. That gives a tight, entirely legal write loop.
+ */
+class DefectAffinityTogglingThread : public GThread
+{
+public:
+    /** @brief The object whose affinity is toggled. Owned by this thread once run() starts. */
+    GObject subject;
+
+    /** @brief Set to stop the toggle loop. */
+    std::atomic<bool> stopToggling{ false };
+
+protected:
+    /**
+     * @brief Toggles the subject's affinity between this thread and none until stopped.
+     */
+    virtual void run() override
+    {
+        while (!stopToggling.load(std::memory_order_acquire))
+        {
+            subject.moveToThread(this);    // adopt: legal, subject currently has no affinity
+            subject.moveToThread(nullptr); // release: legal, this thread is the current owner
+        }
+    }
+};
+
+/**
+ * @brief Best-effort stress test targeting the data race on GObject::m_threadData, previously
+ * written by moveToThread() and read -- with no synchronization -- by threadData(),
+ * startTimer(), killTimer(), deleteLater(), and dispatchMetaCall(), despite all of those being
+ * documented thread-safe.
+ *
+ * Concurrent unsynchronized read/write of a std::shared_ptr is undefined behavior and, in
+ * practice, can corrupt the control block (torn reference counts), which typically surfaces as
+ * heap corruption / a double-free crash catchable by AddressSanitizer even without
+ * ThreadSanitizer, given enough iterations. Best validated under one of those sanitizers; the
+ * check below only confirms the scenario runs to completion without crashing.
+ *
+ * Restructured once moveToThread() became thread-confined. It used to bounce a shared object
+ * between two threads from two *other* threads, which the confinement rule now (correctly)
+ * refuses -- so it tested nothing but the rejection path. The write side is now driven by the
+ * object's own owner, which is the only arrangement the rule permits, while the reads that the
+ * m_threadData mutex actually protects continue to come from other threads.
+ */
+TEST(GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress)
+{
+    DefectAffinityTogglingThread toggler;
+    toggler.start();
+
+    std::atomic<bool> stopReading{ false };
+
+    // Readers hammering the paths that read m_threadData from another thread -- exactly what the
+    // mutex exists for. threadData() itself is no longer public (it is internal plumbing, as in
+    // Qt), so the read is driven through a queued signal emission instead: dispatchMetaCall()
+    // calls target->threadData() to find the dispatcher to post to, which takes the same lock.
+    auto readerBody = [&toggler, &stopReading]()
+    {
+        GSignal<> sig;
+        GObject::connect(sig, &toggler.subject, []() {}, G::QueuedConnection);
+        while (!stopReading.load(std::memory_order_acquire))
+        {
+            (void) toggler.subject.thread();
+            sig.emit();
+        }
+    };
+    std::thread reader1(readerBody);
+    std::thread reader2(readerBody);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    stopReading.store(true, std::memory_order_release);
+    reader1.join();
+    reader2.join();
+
+    toggler.stopToggling.store(true, std::memory_order_release);
+    toggler.wait();
 
     SUCCEED();
 }
@@ -537,4 +669,363 @@ TEST(GObjectDefectTest, CleanupCallbackRegisteringAnotherDoesNotDeadlock)
     {
         destroyer.detach();
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: callLater() permanently disabled a (context, slot) pair if the very first call could
+// not be delivered, because the pending-registry entry was left behind.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Minimal callLater() target whose invocation count is safe to poll across threads.
+ */
+class GObjectDefectCallLaterTarget : public GObject
+{
+public:
+    /**
+     * @brief Slot invoked by callLater().
+     */
+    void onCall() { m_callCount.fetch_add(1); }
+
+    /**
+     * @brief Gets how many times onCall() has run.
+     * @return Invocation count.
+     */
+    int callCount() const { return m_callCount.load(); }
+
+private:
+    std::atomic<int> m_callCount{ 0 };
+};
+
+/**
+ * @brief Regression test for callLater() silently dropping every future call after one failure.
+ *
+ * scheduleCallLater() inserts the key into the pending registry before attempting to dispatch. If
+ * the target has no dispatcher, dispatch fails and the queued metacall is destroyed -- but the
+ * registry entry used to survive. Every later callLater() for the same target then matched that
+ * stale entry, took the "already scheduled" branch, and never dispatched again, so the pair stayed
+ * dead for the rest of the object's life even once a dispatcher existed. The fix erases the entry
+ * when dispatch reports failure.
+ *
+ * Deterministic: the first callLater() targets an object with no thread affinity (this test binary
+ * has no GCoreApplication, so the main thread has no dispatcher) and is expected to be lost. The
+ * assertion is that the *second* call, after the object is moved to a running worker thread,
+ * actually runs. Pre-fix that second call never executes and the wait times out.
+ */
+TEST(GObjectDefectTest, CallLaterRecoversAfterFirstDispatchFails)
+{
+    GObjectDefectCallLaterTarget target;
+
+    // No dispatcher anywhere yet -- this call cannot be delivered and is expected to be lost.
+    GObject::callLater(&target, &GObjectDefectCallLaterTarget::onCall);
+    EXPECT_EQ(target.callCount(), 0) << "call ran despite there being no dispatcher.";
+
+    GThread worker;
+    worker.start();
+    while (!worker.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+    target.moveToThread(&worker);
+
+    // Same target, same slot -- must re-arm now that a dispatcher exists.
+    GObject::callLater(&target, &GObjectDefectCallLaterTarget::onCall);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (target.callCount() == 0 && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    worker.quit();
+    worker.wait();
+
+    EXPECT_EQ(target.callCount(), 1)
+        << "callLater() stayed permanently disabled after its first dispatch failed.";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: a thread deleted its own event dispatcher while other threads were still calling into
+// it through the pointer they had already loaded from GThreadData.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Stress test for dispatcher destruction racing against cross-thread use.
+ *
+ * GThreadData used to hold the dispatcher as an atomic raw pointer. That made the *pointer* load
+ * safe and did nothing for the object's lifetime: a worker finishing deleted its dispatcher while
+ * another thread sat between its own `dispatcher.load()` and the `disp->registerTimer(...)` call
+ * that followed, i.e. a use-after-free on every one of startTimer(), killTimer(), deleteLater(),
+ * dispatchMetaCall() and ~GObject(). The dispatcher is now a shared_ptr and callers hold a strong
+ * reference for the duration of the call, so a finishing thread merely drops its own reference.
+ *
+ * This is a best-effort stress test, and an honest one: the window is narrow, and a clean run
+ * here is *not* what demonstrates the fix. The real signal came from ThreadSanitizer, which
+ * reported this race (as ~GEventDispatcherDefault against GObject::startTimer /
+ * registerTimer / GObject::event / GThread::exec) on the old code while this very suite passed.
+ * Build with -fsanitize=thread to get that signal; see OPEN-RISKS for the exact command. Under a
+ * plain build this only checks the scenario runs to completion without crashing.
+ */
+TEST(GThreadDefectTest, DispatcherUseDuringThreadShutdownStress)
+{
+    constexpr int kTrials = 40;
+
+    for (int trial = 0; trial < kTrials; ++trial)
+    {
+        GThread workerThread;
+        workerThread.start();
+        while (!workerThread.eventDispatcher())
+        {
+            std::this_thread::yield();
+        }
+
+        // Objects living on the worker, driven from this thread while the worker shuts down.
+        GObject subject;
+        subject.moveToThread(&workerThread);
+
+        // Queued signal emission is the cross-thread dispatcher path that must stay safe:
+        // dispatchMetaCall() loads the target thread's dispatcher and posts to it, which is
+        // exactly the load-then-use window this defect lived in. (startTimer()/killTimer() are
+        // now thread-confined and can no longer be driven from here.)
+        GSignal<>         sig;
+        GObject::connect(sig, &subject, []() {}, G::QueuedConnection);
+
+        std::atomic<bool> stop{ false };
+        std::thread       hammer(
+            [&sig, &stop]()
+            {
+                while (!stop.load(std::memory_order_acquire))
+                {
+                    sig.emit();
+                }
+            });
+
+        // Tear the worker down underneath the hammering thread.
+        workerThread.quit();
+        workerThread.wait();
+
+        stop.store(true, std::memory_order_release);
+        hammer.join();
+    }
+
+    SUCCEED();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: an object that called deleteLater() was never destroyed if its thread's event loop
+// stopped before the deferred-delete event was dispatched.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Regression test for a pending deleteLater() being dropped when a thread stops.
+ *
+ * deleteLater() posts a GDeferredDeleteEvent; the receiver is only destroyed when that event is
+ * dispatched. If the loop stopped first, ~GEventDispatcherDefault() freed the pending event but
+ * had no way to free its receiver, so the object leaked silently. GThread now drains deferred
+ * deletes after run() returns, the way Qt's QThreadPrivate::finish() does.
+ *
+ * Made deterministic rather than racy: the worker is parked inside a queued slot while the
+ * deleteLater() is posted and quit() is called, guaranteeing the delete is still sitting in the
+ * queue when the loop is told to stop. On release, exec() sees m_exiting and returns without
+ * draining -- so the object survives only if the shutdown path handles it.
+ *
+ * Failure shows up twice over: the flag below stays false, and AddressSanitizer reports the leak.
+ */
+TEST(GObjectDefectTest, PendingDeleteLaterIsProcessedWhenThreadStops)
+{
+    GThread workerThread;
+    workerThread.start();
+    while (!workerThread.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+
+    std::promise<void> blockEnteredPromise;
+    std::promise<void> blockReleasePromise;
+    auto               blockEnteredFuture = blockEnteredPromise.get_future();
+    auto               blockReleaseFuture = blockReleasePromise.get_future();
+
+    GObject dummyContext;
+    dummyContext.moveToThread(&workerThread);
+
+    GSignal<> blockSig;
+    GObject::connect(
+        blockSig,
+        &dummyContext,
+        [&blockEnteredPromise, &blockReleaseFuture]()
+        {
+            blockEnteredPromise.set_value();
+            blockReleaseFuture.wait();
+        },
+        G::QueuedConnection);
+
+    blockSig.emit();
+    blockEnteredFuture.get();
+
+    // The worker is now parked inside the slot above, so nothing below can be dispatched until
+    // it is released.
+    auto     destroyed = std::make_shared<std::atomic<bool>>(false);
+    GObject* victim    = new GObject();
+    victim->moveToThread(&workerThread);
+    victim->addCleanupCallback([destroyed]() { destroyed->store(true); });
+    victim->deleteLater();
+
+    workerThread.quit();
+    blockReleasePromise.set_value();
+    workerThread.wait();
+
+    EXPECT_TRUE(destroyed->load())
+        << "deleteLater() was still pending when the loop stopped, and the object was leaked "
+           "instead of destroyed.";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: an idle GEventDispatcherDefault woke ~10x/second, and wakeUp() could not actually end
+// a wait because the wait is predicate-based and wakeUp() changed no state.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Verifies an idle processEvents() blocks instead of polling, and that a posted event
+ * still ends the wait promptly.
+ *
+ * The wait used to be capped at 100ms regardless of whether anything was scheduled, so an idle
+ * thread burned a wakeup ten times a second forever. It is now unbounded when no timers are
+ * registered. This checks both halves of that: it must not return on its own while idle, and it
+ * must still return quickly once there is something to do -- the second half is the important
+ * one, since an unbounded wait that misses a notification would hang forever.
+ */
+TEST(GEventDispatcherDefaultDefectTest, IdleWaitBlocksButStillWakesOnPostedEvent)
+{
+    DefectTestableDispatcher dispatcher;
+    GObject                  receiver;
+
+    std::promise<void> returnedPromise;
+    auto               returnedFuture = returnedPromise.get_future();
+    std::thread        loop(
+        [&dispatcher, &returnedPromise]()
+        {
+            dispatcher.processEvents();
+            returnedPromise.set_value();
+        });
+
+    EXPECT_EQ(returnedFuture.wait_for(std::chrono::milliseconds(300)), std::future_status::timeout)
+        << "idle processEvents() returned on its own; it should block until there is work.";
+
+    dispatcher.postEvent(&receiver, new GTimerEvent(1));
+
+    const bool woke
+        = returnedFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    if (!woke)
+    {
+        // Force the loop out so this fails on its assertion rather than hanging in join(). The
+        // thread must not simply be detached: it would still be inside processEvents() touching
+        // `dispatcher`, which is about to be destroyed with this stack frame.
+        dispatcher.interrupt();
+    }
+    loop.join();
+
+    EXPECT_TRUE(woke) << "posting an event did not wake the idle wait -- notification was missed.";
+}
+
+/**
+ * @brief Verifies wakeUp() actually ends an idle wait.
+ *
+ * processEvents() waits on a predicate, so wakeUp()'s bare notify_all() used to be a no-op: with
+ * no state change to observe, the waiter re-evaluated the predicate, saw nothing, and slept
+ * again. It only ever appeared to work because the wait was capped at 100ms and would have
+ * returned anyway. wakeUp() now sets a flag under the mutex that the predicate tests.
+ */
+TEST(GEventDispatcherDefaultDefectTest, WakeUpEndsIdleWait)
+{
+    DefectTestableDispatcher dispatcher;
+
+    std::promise<void> returnedPromise;
+    auto               returnedFuture = returnedPromise.get_future();
+    std::thread        loop(
+        [&dispatcher, &returnedPromise]()
+        {
+            dispatcher.processEvents();
+            returnedPromise.set_value();
+        });
+
+    ASSERT_EQ(returnedFuture.wait_for(std::chrono::milliseconds(300)), std::future_status::timeout)
+        << "idle processEvents() returned before wakeUp() was called.";
+
+    dispatcher.wakeUp();
+
+    const bool woke
+        = returnedFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    if (!woke)
+    {
+        // See IdleWaitBlocksButStillWakesOnPostedEvent: interrupt() rather than detach(), so a
+        // regression fails on the assertion instead of hanging the binary in join() or leaving a
+        // detached thread using a destroyed dispatcher.
+        dispatcher.interrupt();
+    }
+    loop.join();
+
+    EXPECT_TRUE(woke) << "wakeUp() did not end the wait.";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Defect: GTimer emitted timeout before stopping a single-shot timer, and touched its own members
+// after the emit -- so a slot could observe a stale isActive(), and any member access after user
+// code ran was a hazard if that code destroyed the timer.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * @brief Verifies a single-shot GTimer is already stopped by the time its timeout slot runs.
+ *
+ * GTimer::timerEvent() used to emit first and stop afterwards, so a slot observed isActive()
+ * == true for a timer that was about to be stopped, and GTimer touched m_singleShot/stop() after
+ * arbitrary user code had run. It now stops first and emits last, matching Qt's QTimer ordering.
+ *
+ * This also covers the reentrancy half of the GTimer locking work: the slot calls back into
+ * isActive() and start(), which take the same mutex timerEvent() uses. Holding that mutex across
+ * the emit would self-deadlock on a non-recursive mutex, so a hang here is a real failure.
+ */
+TEST(GTimerDefectTest, SingleShotIsStoppedBeforeTimeoutIsEmitted)
+{
+    GThread worker;
+    worker.start();
+    while (!worker.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+
+    std::promise<bool> activePromise;
+    auto               activeFuture = activePromise.get_future();
+
+    // Stack-allocated deliberately. A heap timer would have to be reclaimed with deleteLater(),
+    // which needs the worker's loop to keep running long enough to process it -- quitting first
+    // leaks the object, since the dispatcher's destructor frees the queued event but not its
+    // receiver. Destroying it here after wait() avoids depending on that entirely.
+    GTimer timer;
+    timer.moveToThread(&worker);
+    timer.setSingleShot(true);
+
+    GObject::connect(
+        timer.timeout,
+        &timer,
+        [&timer, &activePromise]()
+        {
+            // Reentrant calls into the timer's own locked API from inside the emit.
+            const bool active = timer.isActive();
+            timer.stop();
+            activePromise.set_value(active);
+        },
+        G::DirectConnection);
+
+    // start() must run on the worker thread so the timer registers against its dispatcher.
+    GObject::callLater(&timer, &GTimer::start, 10);
+
+    const bool fired
+        = activeFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+
+    worker.quit();
+    worker.wait();
+
+    ASSERT_TRUE(fired) << "timeout never fired, or the slot deadlocked against GTimer's own mutex.";
+    EXPECT_FALSE(activeFuture.get())
+        << "single-shot timer was still active inside its own timeout slot.";
 }

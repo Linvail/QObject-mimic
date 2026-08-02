@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 #include "GTimer.h"
 #include "GEvent.h"
+#include "GSignal.h"
 #include "GThread.h"
+#include <atomic>
 #include <chrono>
+#include <future>
 #include <thread>
 
 /**
@@ -33,8 +36,9 @@ public:
     int fireCount() const { return m_fireCount; }
 
 private:
-    bool m_fired{ false };
-    int  m_fireCount{ 0 };
+    // Atomic so this test thread can poll them while the worker thread writes them.
+    std::atomic<bool> m_fired{ false };
+    std::atomic<int>  m_fireCount{ 0 };
 };
 
 /**
@@ -99,54 +103,148 @@ TEST(GTimerTest, StartAndStop)
 }
 
 /**
+ * @brief Starts a worker thread running an event loop and blocks until its dispatcher exists.
+ * @param thread The thread to start.
+ */
+static void startWorkerAndWaitForDispatcher(GThread& thread)
+{
+    thread.start();
+    while (!thread.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+}
+
+/**
+ * @brief Blocks until a queued slot has run on the context object's thread.
+ *
+ * Used before quitting a worker so that anything already sitting in its queue is processed first
+ * -- in particular a single-shot helper's own deleteLater(), which the helper posts immediately
+ * after invoking its functor. Quitting without this can stop the loop while that delete is still
+ * queued, and the object leaks: the dispatcher's destructor frees the pending event but has no
+ * way to delete its receiver. ASan/LSan reports it, so the tests must not race it.
+ * @param context Object whose thread's event loop should be drained.
+ */
+static void drainQueuedEvents(GObject& context)
+{
+    std::promise<void> syncPromise;
+    auto               syncFuture = syncPromise.get_future();
+    GSignal<>          syncSignal;
+    GObject::connect(
+        syncSignal,
+        &context,
+        [&syncPromise]() { syncPromise.set_value(); },
+        G::QueuedConnection);
+    syncSignal.emit();
+    EXPECT_EQ(syncFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "worker event loop did not drain.";
+}
+
+/**
  * @brief Tests static GTimer::singleShot overload for standalone functors.
  *
- * Verifies static template function GTimer::singleShot(int, Functor) executes the provided lambda
- * after specified delay.
+ * Verifies GTimer::singleShot(int, Functor) actually runs the functor. The call is made from
+ * inside a queued slot so it executes on a thread that both owns a dispatcher and is running an
+ * event loop -- the helper object registers its timer against the calling thread, so invoking
+ * this from a thread without a running loop (as this test previously did from the main thread of
+ * a binary with no GCoreApplication) silently does nothing: startTimer() returns -1 and the
+ * helper is destroyed immediately.
  */
-TEST(GTimerTest, SingleShotStaticLambda)
+TEST(GTimerTest, SingleShotStaticLambdaFires)
 {
-    bool fired = false;
-    GTimer::singleShot(10, [&fired]() { fired = true; });
+    GThread worker;
+    startWorkerAndWaitForDispatcher(worker);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    GObject context;
+    context.moveToThread(&worker);
+
+    std::promise<void> firedPromise;
+    auto               firedFuture = firedPromise.get_future();
+
+    GSignal<> trigger;
+    GObject::connect(
+        trigger,
+        &context,
+        [&firedPromise]()
+        { GTimer::singleShot(10, [&firedPromise]() { firedPromise.set_value(); }); },
+        G::QueuedConnection);
+    trigger.emit();
+
+    EXPECT_EQ(firedFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "singleShot(int, Functor) never invoked its functor.";
+
+    drainQueuedEvents(context);
+    worker.quit();
+    worker.wait();
 }
 
 /**
  * @brief Tests static GTimer::singleShot overload with target GObject context.
  *
- * Verifies static template function GTimer::singleShot(int, const GObject*, Functor) and null
- * context pointer safety.
+ * Verifies GTimer::singleShot(int, const GObject*, Functor) runs the functor on the context
+ * object's thread, and that a null context is handled safely.
  */
-TEST(GTimerTest, SingleShotStaticWithContext)
+TEST(GTimerTest, SingleShotStaticWithContextFires)
 {
-    GObject context;
-    bool    fired = false;
+    GThread worker;
+    startWorkerAndWaitForDispatcher(worker);
 
-    GTimer::singleShot(10, &context, [&fired]() { fired = true; });
+    GObject context;
+    context.moveToThread(&worker);
+
+    std::promise<GThread*> firedPromise;
+    auto                   firedFuture = firedPromise.get_future();
+
+    GTimer::singleShot(10,
+                       &context,
+                       [&firedPromise]()
+                       { firedPromise.set_value(GThread::currentThread()); });
 
     GObject* nullContext = nullptr;
     GTimer::singleShot(10, nullContext, []() {});
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    ASSERT_EQ(firedFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "singleShot(int, context, Functor) never invoked its functor.";
+    EXPECT_EQ(firedFuture.get(), &worker) << "functor did not run on the context object's thread.";
+
+    drainQueuedEvents(context);
+    worker.quit();
+    worker.wait();
 }
 
 /**
  * @brief Tests static GTimer::singleShot overload with receiver object member function.
  *
- * Verifies static template function GTimer::singleShot(int, const Receiver*, MemberFunc) and null
- * receiver pointer safety.
+ * Verifies GTimer::singleShot(int, const Receiver*, MemberFunc) invokes the member function, and
+ * that a null receiver is handled safely.
  */
-TEST(GTimerTest, SingleShotStaticWithReceiver)
+TEST(GTimerTest, SingleShotStaticWithReceiverFires)
 {
-    GTimerTestReceiver receiver;
+    GThread worker;
+    startWorkerAndWaitForDispatcher(worker);
 
-    GTimer::singleShot(10, &receiver, &GTimerTestReceiver::onTimeout);
+    GTimerTestReceiver receiver;
+    receiver.moveToThread(&worker);
 
     GTimerTestReceiver* nullReceiver = nullptr;
     GTimer::singleShot(10, nullReceiver, &GTimerTestReceiver::onTimeout);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    GTimer::singleShot(10, &receiver, &GTimerTestReceiver::onTimeout);
+
+    // wasFired() is atomic, so polling it from this thread while the worker writes it is safe.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!receiver.wasFired() && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    drainQueuedEvents(receiver);
+    worker.quit();
+    worker.wait();
+
+    EXPECT_TRUE(receiver.wasFired())
+        << "singleShot(int, receiver, MemberFunc) never invoked the member function.";
+    EXPECT_EQ(receiver.fireCount(), 1) << "the single-shot fired more than once.";
 }
 
 /**

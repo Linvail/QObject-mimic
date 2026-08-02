@@ -23,20 +23,44 @@ class GEventDispatcherDefault;
 class GCoreApplication;
 
 /**
- * @brief Per-thread state holding that thread's event dispatcher and who owns it.
+ * @brief Per-thread state owning that thread's event dispatcher.
  *
- * Handed out by GObject::threadData()/GThread::threadData() as an opaque handle. Its members are
- * private on purpose: they are a live pointer to the dispatcher a running event loop is calling
- * into, plus the flag that decides whether that dispatcher gets deleted on thread exit. Writable
- * from outside, they would allow redirecting a thread's dispatcher to an arbitrary address or
- * forging ownership into a double free. Only the three classes that legitimately manage a
- * thread's lifecycle are granted access.
+ * Handed out by GObject::threadData()/GThread::threadData() as an opaque handle. The dispatcher is
+ * held by shared_ptr and only ever reachable through dispatcher(), which hands back a *strong*
+ * reference. That is what makes cross-thread use safe: a thread finishing can drop its dispatcher
+ * at any moment, and an atomic raw pointer would only have made the pointer load safe, not the
+ * object's lifetime -- the owning thread could free it between another thread's load and its call.
+ * Holding a strong reference for the duration of the call keeps it alive until that caller is done.
+ *
+ * Access is private on purpose: a writable dispatcher handle would let outside code redirect a
+ * running loop or drop a dispatcher still in use. Only the three classes that legitimately manage
+ * a thread's lifecycle are granted access.
  */
 struct GThreadData
 {
 private:
-    std::atomic<GAbstractEventDispatcher*> dispatcher{nullptr};
-    std::atomic<bool> ownsDispatcher{false};
+    /**
+     * @brief Gets a strong reference to this thread's dispatcher.
+     * @return Shared pointer to the dispatcher, or nullptr if none is installed. Thread-safe.
+     */
+    std::shared_ptr<GAbstractEventDispatcher> dispatcher() const
+    {
+        std::lock_guard<std::mutex> lock(m_dispatcherMutex);
+        return m_dispatcher;
+    }
+
+    /**
+     * @brief Installs or clears this thread's dispatcher.
+     * @param dispatcher The dispatcher to install; pass nullptr to clear. Thread-safe.
+     */
+    void setDispatcher(std::shared_ptr<GAbstractEventDispatcher> dispatcher)
+    {
+        std::lock_guard<std::mutex> lock(m_dispatcherMutex);
+        m_dispatcher = std::move(dispatcher);
+    }
+
+    mutable std::mutex m_dispatcherMutex;
+    std::shared_ptr<GAbstractEventDispatcher> m_dispatcher;
 
     friend class GObject;
     friend class GThread;
@@ -60,22 +84,42 @@ public:
     virtual ~GObject();
 
     /**
+     * @brief GObject is neither copyable nor movable.
+     *
+     * These are already deleted implicitly, because the class holds std::mutex members -- but
+     * only by accident. Stating it makes the guarantee survive refactoring: m_life is a
+     * shared_ptr, so a copy would raise its use count and ~GObject()'s m_life.reset() would no
+     * longer expire the token. Every connect()/callLater() wrapper's weakLife.lock() would keep
+     * succeeding and invoke slots on a destroyed object -- a use-after-free reintroduced silently
+     * by an unrelated change.
+     */
+    GObject(const GObject&) = delete;
+    GObject& operator=(const GObject&) = delete;
+    GObject(GObject&&) = delete;
+    GObject& operator=(GObject&&) = delete;
+
+    /**
      * @brief Gets the thread affinity of this object.
      * @return A pointer to the thread this object lives in. Thread-safe.
      */
     GThread* thread() const;
 
     /**
-     * @brief Gets the thread data container representing the event dispatcher.
-     * @return A shared pointer to the thread data.
-     */
-    std::shared_ptr<GThreadData> threadData() const;
-
-    /**
      * @brief Changes the thread affinity of this object.
-     * @param thread The new thread this object will live in. Thread-safe.
+     *
+     * **Not thread-safe: must be called from this object's own thread**, matching Qt's
+     * QObject::moveToThread() ("Current thread is not the object's thread. Cannot move to target
+     * thread"). Only the thread that currently owns an object may hand it to another; letting any
+     * thread re-home an object at will would race the owner's own use of it.
+     *
+     * Qt's one exception is reproduced: an object with *no* thread affinity yet may be adopted by
+     * the calling thread. That is what lets a freshly constructed object be moved onto a worker,
+     * and what lets GThread adopt itself when its run loop starts.
+     * @param thread The new thread this object will live in; nullptr clears the affinity.
+     * @return True if the object now lives in the requested thread (including when it already
+     * did); false if the move was refused, in which case the affinity is unchanged.
      */
-    void moveToThread(GThread* thread);
+    bool moveToThread(GThread* thread);
 
     /**
      * @brief Gets the object's descriptive name.
@@ -102,14 +146,24 @@ public:
 
     /**
      * @brief Starts a timer for this object with the specified interval.
+     *
+     * **Not thread-safe: must be called from this object's own thread.** Timers are owned by the
+     * dispatcher of the thread the object lives in, and only that thread's event loop can deliver
+     * the resulting timerEvent(). Calling from any other thread is rejected with a warning on
+     * stderr and returns -1, matching Qt, whose QObject::startTimer() likewise refuses
+     * ("Timers cannot be started from another thread"). To start a timer for an object living in
+     * another thread, get onto that thread first -- for example with callLater().
      * @param interval Interval in milliseconds.
-     * @return Unique timer ID. Thread-safe.
+     * @return Unique timer ID, or -1 if the timer could not be started.
      */
     int startTimer(int interval);
 
     /**
      * @brief Kills the timer with the specified ID.
-     * @param id The timer ID to stop. Thread-safe.
+     *
+     * **Not thread-safe: must be called from this object's own thread**, for the same reason as
+     * startTimer(). Calls from another thread are rejected with a warning and do nothing.
+     * @param id The timer ID to stop.
      */
     void killTimer(int id);
 
@@ -676,6 +730,18 @@ private:
     scheduleCallLater(GObject* context, const GCallLaterKey& key, std::function<void()> invoker);
 
     /**
+     * @brief Gets the thread data container holding this object's event dispatcher.
+     *
+     * Private: this is internal plumbing with no QObject equivalent -- Qt's
+     * QObjectPrivate::threadData is likewise not public API. It is the handle through which the
+     * dispatcher is reached, so exposing it hands out the machinery every other access-control
+     * decision in this class exists to protect.
+     * @return A shared pointer to the thread data, or nullptr if this object has no affinity.
+     * Thread-safe.
+     */
+    std::shared_ptr<GThreadData> threadData() const;
+
+    /**
      * @brief Internal event dispatch plumbing; routes an event to its handler.
      *
      * Deliberately private and non-virtual: this is not an extension point. The event queue is
@@ -692,8 +758,11 @@ private:
      * @param target Target GObject.
      * @param slot Callback function.
      * @param type Connection type. Thread-safe.
+     * @return True if the slot ran (direct) or was queued successfully; false if it could not be
+     * delivered at all, which happens when the target has no thread affinity or its thread has no
+     * event dispatcher yet. Callers that track pending state must undo it when this returns false.
      */
-    static void
+    static bool
     dispatchMetaCall(GObject* target, std::function<void()> slot, G::ConnectionType type);
 
     /** @brief Grants the event queue access to event(), which it alone invokes. */

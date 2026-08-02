@@ -48,7 +48,9 @@ private:
     static GCoreApplication* s_instance;
 
     std::unique_ptr<GThread>                  m_mainThread;
-    std::unique_ptr<GAbstractEventDispatcher> m_dispatcher;
+    // shared_ptr rather than unique_ptr: GThreadData hands out strong references, so a dispatcher
+    // cannot be destroyed while another thread is part-way through a call into it.
+    std::shared_ptr<GAbstractEventDispatcher> m_dispatcher;
     std::atomic<bool>                         m_exiting{ false };
 };
 

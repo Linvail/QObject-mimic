@@ -5,6 +5,7 @@
 #include "GThread.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <unordered_map>
 
 struct CallLaterNode
@@ -96,7 +97,7 @@ GObject::~GObject()
     }
     if (threadDataCopy)
     {
-        if (GAbstractEventDispatcher* dispatcher = threadDataCopy->dispatcher.load())
+        if (auto dispatcher = threadDataCopy->dispatcher())
         {
             dispatcher->removeEventsForReceiver(this);
         }
@@ -159,7 +160,18 @@ void GObject::scheduleCallLater(GObject* context,
             }
         };
 
-        dispatchMetaCall(context, metaCall, G::QueuedConnection);
+        if (!dispatchMetaCall(context, metaCall, G::QueuedConnection))
+        {
+            // The target has no dispatcher yet, so this call can never run. Drop the registry
+            // entry we just created: leaving it behind is what made this failure permanent, since
+            // every later callLater() for the same target would find it, take the "already
+            // scheduled" branch above, and never dispatch again -- silently disabling that
+            // (context, slot) pair for the rest of the object's life, even once a dispatcher
+            // existed. Erasing lets the next call re-arm. This call is still lost; only a
+            // retry queue could save it, which would need its own ownership rules.
+            std::lock_guard<std::mutex> lock(GCallLaterRegistry::mutex);
+            GCallLaterRegistry::pending.erase(key);
+        }
     }
 }
 
@@ -174,16 +186,89 @@ std::shared_ptr<GThreadData> GObject::threadData() const
     return m_threadData;
 }
 
-void GObject::moveToThread(GThread* thread)
+bool GObject::moveToThread(GThread* thread)
 {
+    GThread* const currentAffinity = m_thread.load();
+    GThread* const callerThread = GThread::currentThread();
+
+    if (currentAffinity == thread)
+    {
+        // Already there; nothing to do and nothing to refuse.
+        return true;
+    }
+
+    // Transcribed from Qt's QObject::moveToThread(). The general rule is that only the thread that
+    // owns an object may re-home it, with one exception: an object that has no affinity yet may be
+    // adopted by the calling thread. That exception is what makes the two normal idioms work --
+    // moving a freshly constructed object onto a worker, and GThread adopting itself once its run
+    // loop starts -- while still rejecting one thread yanking another thread's live object away.
+    const bool adoptingUnownedObject = (currentAffinity == nullptr && thread == callerThread);
+    if (!adoptingUnownedObject && currentAffinity != callerThread)
+    {
+        std::fprintf(stderr,
+                     "GObject::moveToThread: current thread is not the object's thread; cannot "
+                     "move it to the target thread\n");
+        return false;
+    }
+
+    // Take any active timers off the outgoing dispatcher before the affinity changes. Qt documents
+    // this behaviour ("all active timers for the object will be reset ... stopped in the current
+    // thread and restarted, with the same interval, in the targetThread"); without it the timers
+    // would keep firing on the thread the object just left, delivering timerEvent() somewhere it
+    // no longer lives.
+    std::vector<GAbstractEventDispatcher::TimerRegistration> timersToMove;
+    {
+        std::shared_ptr<GThreadData> oldData;
+        {
+            std::lock_guard<std::mutex> lock(m_threadDataMutex);
+            oldData = m_threadData;
+        }
+        if (oldData)
+        {
+            if (auto oldDispatcher = oldData->dispatcher())
+            {
+                timersToMove = oldDispatcher->takeTimersForReceiver(this);
+            }
+        }
+    }
+
     // Resolve the new thread's data before taking our own lock, and store it under the lock in
     // one atomic-looking step so concurrent readers of threadData() never see a half-updated or
-    // torn shared_ptr.
+    // torn shared_ptr. The lock is still needed even though writes are now single-threaded:
+    // threadData() is read from other threads.
     std::shared_ptr<GThreadData> newData = thread ? thread->threadData() : nullptr;
     m_thread.store(thread);
+    {
+        std::lock_guard<std::mutex> lock(m_threadDataMutex);
+        m_threadData = std::move(newData);
+    }
 
-    std::lock_guard<std::mutex> lock(m_threadDataMutex);
-    m_threadData = std::move(newData);
+    if (!timersToMove.empty())
+    {
+        // Re-register on the destination thread rather than from here: registerTimer() must run
+        // where the timer will be serviced. Qt solves it the same way, queueing the
+        // re-registration with invokeMethod(..., Qt::QueuedConnection) so it lands on the new
+        // thread. If this object is destroyed before the queued call runs, ~GObject() strips its
+        // pending events from the dispatcher, so the call is dropped rather than dangling.
+        dispatchMetaCall(
+            this,
+            [this, timersToMove]()
+            {
+                if (auto tData = threadData())
+                {
+                    if (auto disp = tData->dispatcher())
+                    {
+                        for (const auto& timer : timersToMove)
+                        {
+                            disp->registerTimer(timer.timerId, timer.intervalMs, this);
+                        }
+                    }
+                }
+            },
+            G::QueuedConnection);
+    }
+
+    return true;
 }
 
 std::string GObject::objectName() const
@@ -203,7 +288,7 @@ void GObject::deleteLater()
     auto* event = new GDeferredDeleteEvent();
     if (auto tData = threadData())
     {
-        if (auto disp = tData->dispatcher.load())
+        if (auto disp = tData->dispatcher())
         {
             disp->postEvent(this, static_cast<GEvent*>(event));
             return;
@@ -249,23 +334,46 @@ void GObject::timerEvent(GTimerEvent* event)
 
 int GObject::startTimer(int interval)
 {
-    int timerId = s_nextTimerId.fetch_add(1);
+    // Thread-confined, as in Qt. The timer lives in the dispatcher belonging to this object's
+    // thread, and only that thread's event loop can ever deliver the resulting timerEvent().
+    // Registering from elsewhere would either race that dispatcher's lifetime or quietly install
+    // a timer whose events the caller is not positioned to receive, so refuse it outright rather
+    // than doing something surprising.
+    if (thread() != GThread::currentThread())
+    {
+        std::fprintf(stderr, "GObject::startTimer: timers cannot be started from another thread\n");
+        return -1;
+    }
+
     if (auto tData = threadData())
     {
-        if (auto disp = tData->dispatcher.load())
+        if (auto disp = tData->dispatcher())
         {
+            // Only consume an id once the timer is actually going to be registered.
+            const int timerId = s_nextTimerId.fetch_add(1);
             disp->registerTimer(timerId, interval, this);
             return timerId;
         }
     }
+
+    std::fprintf(stderr,
+                 "GObject::startTimer: this thread has no event dispatcher, so the timer cannot "
+                 "be started\n");
     return -1;
 }
 
 void GObject::killTimer(int id)
 {
+    // Thread-confined for the same reason as startTimer().
+    if (thread() != GThread::currentThread())
+    {
+        std::fprintf(stderr, "GObject::killTimer: timers cannot be stopped from another thread\n");
+        return;
+    }
+
     if (auto tData = threadData())
     {
-        if (auto disp = tData->dispatcher.load())
+        if (auto disp = tData->dispatcher())
         {
             disp->unregisterTimer(id);
         }
@@ -278,11 +386,11 @@ void GObject::addCleanupCallback(std::function<void()> callback)
     m_cleanupCallbacks.push_back(std::move(callback));
 }
 
-void GObject::dispatchMetaCall(GObject* target, std::function<void()> slot, G::ConnectionType type)
+bool GObject::dispatchMetaCall(GObject* target, std::function<void()> slot, G::ConnectionType type)
 {
     if (!target)
     {
-        return;
+        return false;
     }
 
     GThread* targetThread = target->thread();
@@ -305,16 +413,16 @@ void GObject::dispatchMetaCall(GObject* target, std::function<void()> slot, G::C
         auto* event = new GMetaCallEvent(slot);
         if (auto tData = target->threadData())
         {
-            if (auto disp = tData->dispatcher.load())
+            if (auto disp = tData->dispatcher())
             {
                 disp->postEvent(target, static_cast<GEvent*>(event));
-                return;
+                return true;
             }
         }
         delete event;
+        return false;
     }
-    else
-    {
-        slot();
-    }
+
+    slot();
+    return true;
 }

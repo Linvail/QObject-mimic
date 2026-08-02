@@ -1,222 +1,295 @@
 # Open risks and defects — snapshot 2026-08-02
 
-Everything known to be wrong, incomplete, or misleading in `technology/` and `tests/` as of this
-date, after the two API-surface passes recorded in `CHANGES-20260801.md`. Nothing in this list is
-fixed; this is the backlog, not a changelog.
+Everything known to be wrong, incomplete, or misleading in `technology/` and `tests/`, after the
+two API-surface passes in `CHANGES-20260801.md` and the defect pass in `CHANGES-20260802.md`.
 
-Each item states how it was confirmed. Where something was demonstrated by running code, the
-measured result is quoted — items marked *by inspection* were read but not executed, and should be
-treated as slightly less certain.
+Each item states how it was confirmed. Items marked *by inspection* were read but not executed.
+Resolved items are kept with their resolution so the history stays readable — see the status
+table below for the current picture.
 
-Verification baseline for this snapshot: `Tests` (42 cases) passes on Windows/MSVC and on
-WSL2/GCC with AddressSanitizer, both exit 0, no LeakSanitizer output. No ThreadSanitizer run has
-ever been done on this codebase — see R11.
+## Status at a glance
+
+| ID  | Risk | Severity | Status |
+|-----|------|----------|--------|
+| R1  | `GCoreApplication` re-exec busy-spins at 100% CPU | High | **Open** — deferred with GCoreApplication |
+| R2  | `callLater()` permanently drops calls after one failure | High | Fixed 2026-08-02 |
+| R3  | `GTimer` documents thread safety it lacks | Med-High | Fixed 2026-08-02 |
+| R4  | `parent` constructor argument did nothing | Medium | Fixed by owner (`bd19dbb`) |
+| R5  | Three `GTimer` tests assert nothing | Medium | Fixed 2026-08-02 |
+| R6  | Platform event dispatchers are empty shells | Medium | **Open** — mission stage, tied to GCoreApplication |
+| R7  | `GTimer::timerEvent()` touched `this` after user code | Low-Med | Fixed 2026-08-02 (residual documented) |
+| R8  | `GObject` non-copyable only by accident | Low | Fixed 2026-08-02 |
+| R9  | `GCoreApplication` singleton unguarded | Low | **Open** — deferred with GCoreApplication |
+| R10 | Idle event loops woke ~10×/second | Low | Fixed 2026-08-02 |
+| R11 | ThreadSanitizer had never been run | Informational | Done 2026-08-02 — results in R12 |
+| R12 | Dispatcher deleted while still in use at thread shutdown | High | Fixed 2026-08-02 |
+| R13 | Pending `deleteLater()` leaks when an event loop stops | Medium | Fixed 2026-08-02 (worker threads) |
+| R14 | Residual ThreadSanitizer warnings, untriaged | Medium | **Open** — 13 remain (was 138) |
+| R15 | Remaining "Thread-safe" doc claims not audited against Qt | Medium | Partly done — timers/moveToThread/GTimer fixed |
+| R16 | moveToThread() timer migration: TSan lock-order-inversion | Low | Analysed — false positive, kept for the record |
+
+---
+
+## R16 — `moveToThread()` timer migration: TSan lock-order-inversion *(false positive)*
+
+**Severity: Low. Reported by ThreadSanitizer, investigated, and shown to be a phantom cycle. No
+code change made; recorded so nobody re-investigates it from scratch.**
+
+`GObject::moveToThread()` now carries active timers to the destination thread (Qt documents this:
+"the timers are first stopped in the current thread and restarted ... in the targetThread"),
+queueing the re-registration so it runs on the new thread. That makes the moving thread post an
+event into a *second* dispatcher's queue — a cross-dispatcher lock interaction that did not exist
+before. Adding it made TSan report `lock-order-inversion (potential deadlock)`; bisection confirmed
+the report appears and disappears with exactly that one post.
+
+The reported cycle is:
+
+```
+M102 (GThread::m_waitMutex) => M645 (a dispatcher mutex) => M647 (another dispatcher mutex) => M102
+```
+
+**The third edge cannot happen.** TSan claims a dispatcher mutex is held while `m_waitMutex` is
+acquired at [GThread.cpp:91](../technology/GThread.cpp#L91) — but that site is the thread lambda's
+final `m_waitCv.notify_all()`, where the only lock taken is `m_waitMutex` and no dispatcher mutex
+is held or reachable. One provably impossible edge means the cycle is not real.
+
+Corroborating: both dispatcher mutexes print with address `0x000000000000`, i.e. TSan no longer
+has the objects — they were destroyed. The suite creates and destroys dozens of GThreads, each
+allocating and freeing a dispatcher (and its mutex) at recurring heap addresses, so the lock-order
+graph accumulates edges from dead mutexes and mixes them with live ones. The migration post did not
+create a hazard; it added the last edge that closed a cycle in an already-polluted graph.
+
+The real code holds no lock across the post: `moveToThread()` releases `m_threadDataMutex`,
+`takeTimersForReceiver()` releases the source dispatcher's mutex, and `processEvents()` dispatches
+at [GEventDispatcherDefault.cpp:143](../technology/GEventDispatcherDefault.cpp#L143), outside the
+lock scope that closes at line 117.
+
+**Note this does not explain R14.** The same "stale mutex identity" theory does *not* cover
+`NewShorterTimerWakesPromptly`, which still reports 6 warnings when run in isolation with a single
+worker thread and a single dispatcher. R14 remains open and unexplained.
+
+---
+
+## R15 — Other "Thread-safe" doc claims have not been audited against Qt *(new)*
+
+**Severity: Medium — a documentation-correctness problem that produces real work in the wrong
+direction.** `GObject::startTimer()`/`killTimer()` were documented "Thread-safe"; Qt refuses those
+calls cross-thread outright. The comment was wrong, and it was believed: R3 added a mutex to
+`GTimer` to honour a promise the library should never have made. Those two are now corrected, but
+the same class of claim appears elsewhere and has **not** been checked against Qt:
+
+- **`GObject::moveToThread()`** — documented "Thread-safe". Qt restricts it to the object's own
+  thread: *"QObject::moveToThread: Current thread (%p) is not the object's thread (%p). Cannot
+  move to target thread"*. Qt additionally refuses when the object has a parent. Almost certainly
+  the same mistake.
+- **`GObject::objectName()` / `setObjectName()`** — documented "Thread-safe". Qt makes no such
+  promise for `QObject` property access.
+- **`GTimer::interval()` / `setInterval()` / `isActive()` / `isSingleShot()` / `setSingleShot()` /
+  `timerId()`** — documented "Thread-safe" and currently mutex-guarded. `QTimer` offers no thread
+  safety at all, so this exceeds Qt even though it is now honestly implemented.
+- ~~**`GObject::threadData()`**~~ — **done 2026-08-02.** It and `GThread::threadData()` are now
+  private (the latter with `friend class GObject`), matching Qt, where
+  `QObjectPrivate::threadData` is not public API. It was the last public handle onto the
+  dispatcher plumbing — the route by which the R12 hijack was reachable before `GThreadData`'s
+  members were encapsulated. Verified unreachable by compile probe. The one test that poked it now
+  drives the same mutex through a queued signal emission, which is how `dispatchMetaCall()` reads
+  it internally.
+
+**Do not "fix" these unilaterally in either direction.** Each one is a decision about whether to
+match Qt or deliberately exceed it, and the owner has asked to be consulted. What must not happen
+again is treating a comment as a contract and building to it.
+
+---
+
+## R14 — Residual ThreadSanitizer warnings, not yet triaged *(new)*
+
+**Severity: Medium — unknown, which is the point.** After the R12/R13 fixes the suite still
+reports **18 TSan warnings** (14 data races, 4 double-lock), down from **138** at the start of the
+day. These have *not* been explained and must not be assumed benign.
+
+What is known:
+
+- They are **not** artifacts of running the whole suite: the affected tests reproduce them when
+  run in isolation.
+- They are **not** newly introduced. `NewShorterTimerWakesPromptly` — the densest source, 6 of the
+  14 — reports **16** warnings at the pre-fix baseline and 6 now, so the work reduced them.
+- In nearly every remaining report, **both sides of the "race" hold the same mutex**
+  (`GEventDispatcherDefault::m_mutex`), and the accesses are inside `registerTimer()`'s
+  `m_timers.push_back()` and `processEvents()`'s timer-collection loop — both plainly inside
+  `lock_guard`/`unique_lock` scopes. A genuine data race should not look like that, which suggests
+  either a subtlety not yet understood (condition-variable/`unique_lock` modelling, or memory
+  reuse defeating TSan's happens-before edges) or a real ordering bug that the mutex does not
+  actually cover.
+- The 4 double-lock reports are likewise unexplained; the one inspected involves
+  `GThread::m_waitMutex` on a stack-allocated thread.
+
+**Next step:** triage properly rather than guess — narrow one report to a minimal reproducer, and
+check whether TSan's mutex modelling is being confused by dispatcher memory being freed and
+reallocated at the same address across trials. Until then this is an open question, not a clean
+bill of health.
+
+---
+
+## R12 — Dispatcher deleted while other threads were still calling into it *(fixed)*
+
+**Severity: High. Found by ThreadSanitizer; fixed 2026-08-02.**
+
+`GThreadData` held the dispatcher as an atomic raw pointer, so a thread finishing could delete its
+dispatcher while another thread sat between its own `dispatcher.load()` and the call that
+followed. The atomic made the *pointer* load safe and did nothing for the object's lifetime. Every
+one of `GObject::startTimer()`, `killTimer()`, `deleteLater()`, `dispatchMetaCall()` and
+`~GObject()` had that shape, as did `GThread::exec()`'s own loop.
+
+**Fix:** the dispatcher is now held by `std::shared_ptr` in `GThreadData`, reachable only through
+`dispatcher()`, which returns a *strong* reference. A finishing thread merely drops its own
+reference; anything mid-call keeps the object alive until it is done. `GThread::eventDispatcher()`
+returns a `shared_ptr` for the same reason, and `GCoreApplication` holds its dispatcher by
+`shared_ptr` rather than `unique_ptr`.
+
+Verified: the 3 vptr races (ctor/dtor vs virtual call) are gone, and the dedicated stress test
+`GThreadDefectTest.DispatcherUseDuringThreadShutdownStress` reports zero TSan warnings.
+
+Note this was the same hazard the removed `GThread::setEventDispatcher()` had, reached through the
+thread's own shutdown rather than an external swap — so the earlier claim that removing the setter
+"resolves PS item 1 outright" held only for the external-swap path. Both routes are now closed.
+
+---
+
+## R13 — Pending `deleteLater()` leaked when the event loop stopped *(fixed for worker threads)*
+
+**Severity: Medium. Confirmed by LeakSanitizer; fixed 2026-08-02.**
+
+`deleteLater()` posts a `GDeferredDeleteEvent`, and the receiver is only destroyed when that event
+is dispatched. If the loop stopped first, `~GEventDispatcherDefault()` freed the pending event but
+had no way to free its receiver. Any `deleteLater()` closely followed by `quit()` lost the object;
+`GTimer::singleShot()` was especially exposed, since its helper always reclaims itself that way.
+
+**Fix:** `GAbstractEventDispatcher::processDeferredDeletes()` drains outstanding deferred deletes,
+and `GThread` calls it after `run()` returns and before releasing the dispatcher — mirroring Qt's
+`QThreadPrivate::finish()`, which calls `sendPostedEvents(nullptr, QEvent::DeferredDelete)` at
+exactly that point. Covered by
+`GObjectDefectTest.PendingDeleteLaterIsProcessedWhenThreadStops`, made deterministic by parking
+the worker inside a queued slot while the delete is posted and `quit()` is called.
+
+**Still open for the main thread:** `GCoreApplication::exec()` does not call
+`processDeferredDeletes()` on the way out, so the same leak remains there. That is a one-line
+addition deliberately left to the GCoreApplication rework rather than folded in here.
 
 ---
 
 ## R1 — `GCoreApplication::exec()` busy-spins at 100% CPU after a `quit()`/`exec()` cycle
 
-**Severity: High.** `GEventDispatcherDefault::m_interrupt`
-([GEventDispatcherDefault.h:118](../technology/GEventDispatcherDefault.h#L118)) is set by
-`interrupt()` and there is no code path anywhere that clears it. `processEvents()` returns `false`
-immediately while it is set ([GEventDispatcherDefault.cpp:21](../technology/GEventDispatcherDefault.cpp#L21)),
-and `GCoreApplication::exec()` loops on `processEvents()` without blocking on anything else.
+**Severity: High. Open — deliberately deferred**, since `GCoreApplication` is being redesigned
+(see `ForAI/misson-detail-GCoreApplication.txt`) and the fix belongs with that work.
 
-`quit()` sets `m_interrupt`; a second `exec()` then spins forever, processing nothing, at full
-core utilisation.
+`GEventDispatcherDefault::m_interrupt` is set by `interrupt()` and no code path ever clears it.
+`processEvents()` returns `false` immediately while it is set, and `exec()` loops on
+`processEvents()`. `quit()` sets the flag, so a second `exec()` spins forever, processing nothing.
 
-**Confirmed by execution.** A standalone harness calling `interrupt()` then looping
-`processEvents()` the way `exec()` does measured **6,158,569 returns in 200 ms** — no blocking at
-all.
+**Confirmed by execution:** a harness calling `interrupt()` then looping `processEvents()` the way
+`exec()` does measured **6,158,569 returns in 200 ms** — no blocking at all.
 
-**Note the trigger moved.** Previously recorded as "custom dispatcher reused after a thread
-restart". Removing `GThread::setEventDispatcher()` closed that path: `GThread::start()` now always
-constructs a fresh dispatcher, because the previous one was deleted and the pointer exchanged to
-`nullptr` on thread exit. What remains reachable is `GCoreApplication`, whose dispatcher lives for
-the whole application lifetime. The prior description of this defect is stale.
+Note the trigger moved: removing `GThread::setEventDispatcher()` closed the worker-thread route,
+because `GThread::start()` always constructs a fresh dispatcher. `GCoreApplication` remains
+reachable because its dispatcher lives for the whole application lifetime.
 
-**Directly contradicts the mission's own constraint** for the event-dispatcher stage: *"100%
-cpu-spin is not allowed."*
-
-**Suggested fix:** clear `m_interrupt` when an event loop (re-)enters, or have `processEvents()`
-consume the interrupt rather than latch on it. Needs a decision on which of the two is the
-intended semantic before coding.
+**Directly contradicts the mission's own constraint** for the dispatcher stage: *"100% cpu-spin is
+not allowed."*
 
 ---
 
-## R2 — `callLater()` can silently and permanently drop a call
+## R6 — Platform event dispatchers are empty shells (mission stage incomplete)
 
-**Severity: High.** By inspection of
-[GObject.cpp `scheduleCallLater()`](../technology/GObject.cpp) and `dispatchMetaCall()`.
+**Severity: Medium (unimplemented feature). Open.**
 
-The sequence: `scheduleCallLater()` inserts the key into the pending registry and sets
-`isNew = true`, then calls `dispatchMetaCall()`. If the target has no thread data or no dispatcher
-yet, `dispatchMetaCall()` deletes the freshly allocated `GMetaCallEvent` and returns. The call
-never runs — and the registry entry stays behind.
-
-The compounding part: every later `callLater()` for the same `(context, target)` pair now finds
-that stale entry, takes the `isNew = false` branch, updates the invoker, and **never dispatches
-again**. The pair is permanently dead for the rest of the object's life, even once a dispatcher
-exists. No diagnostic is emitted.
-
-**Suggested fix:** erase the pending entry when dispatch fails, so a later call re-arms. A
-louder alternative is to report the failure, but that changes the API contract.
-
----
-
-## R3 — `GTimer` documents thread safety it does not implement
-
-**Severity: Medium-High.** [GTimer.h:119-122](../technology/GTimer.h#L119-L122).
-
-`m_interval`, `m_timerId`, `m_singleShot`, and `m_active` are plain non-atomic members with no
-mutex, read and written by `interval()`/`setInterval()`/`isActive()`/`isSingleShot()`/
-`setSingleShot()`/`timerId()`/`start()`/`stop()`. Every one of those accessors carries a doxygen
-line ending in "Thread-safe."
-
-`GObject` next door does this properly (`m_nameMutex`, `m_threadDataMutex`,
-`std::atomic<GThread*>`), so the inconsistency is likely to be read as intentional by anyone
-trusting the docs. Concurrent `start()`/`stop()` from two threads is a plain data race.
-
-Mission guide 7 asks for attention to exactly this. **Either add the synchronisation or correct
-the comments — but the current state is worse than both**, because it actively misinforms.
-
----
-
-## R4 — The `parent` constructor argument does nothing
-
-**Severity: Medium.** `m_parent` ([GObject.h:712](../technology/GObject.h#L712)) is assigned in the
-constructor initialiser list and **never read anywhere else** — confirmed by grep across
-`technology/`: the only two occurrences are the declaration and that initialisation.
-
-`GObject(GObject* parent = nullptr)` and `GTimer(GObject* parent = nullptr)` reproduce Qt's
-signature exactly, and Qt's contract is that the parent takes ownership and deletes the child.
-Here it does not. A caller writing the idiomatic Qt thing leaks:
-
-```cpp
-GObject* parent = new GObject();
-GTimer*  t      = new GTimer(parent);
-delete parent;                          // t is leaked; nothing owns it
-```
-
-That snippet compiles today (probe `r3`). This is a misleading-API defect rather than a crash: the
-signature makes a promise the implementation does not keep.
-
-**Suggested fix:** pick one of implement child ownership, drop the parameter, or document the
-non-ownership prominently. Implementing it properly also means deciding what happens when parent
-and child have different thread affinity.
-
----
-
-## R5 — Three of six `GTimer` tests assert nothing
-
-**Severity: Medium (test quality).**
-[test_gtimer.cpp:107](../tests/test_gtimer.cpp#L107),
-[:121](../tests/test_gtimer.cpp#L121), [:140](../tests/test_gtimer.cpp#L140).
-
-`SingleShotStaticLambda`, `SingleShotStaticWithContext`, and `SingleShotStaticWithReceiver` each
-declare a `fired` flag, call `singleShot`, sleep 30 ms, and then **never `EXPECT` anything**. They
-would pass if `singleShot()` were an empty function.
-
-Worse, they are probably no-ops in practice: those tests run on the main thread of a binary with
-no `GCoreApplication`, so there is no dispatcher, `startTimer()` returns `-1`, and the helper is
-deleted immediately. The static `GTimer::singleShot()` family is therefore effectively **untested**
-despite appearing covered.
-
----
-
-## R6 — Platform event dispatchers are empty shells (mission stage 5 incomplete)
-
-**Severity: Medium (unimplemented feature, not a defect).**
-
-`GEventDispatcherWin32.cpp` and `GEventDispatcherLinux.cpp` contain nothing but defaulted
-constructors and destructors; both classes inherit `GEventDispatcherDefault` unchanged. There is
-no native message-loop integration, so the mission's *"I want to receive OS/platform's messages"*
-is not met on either platform.
-
----
-
-## R7 — `GTimer::timerEvent()` touches `this` after user code may have deleted it
-
-**Severity: Low-Medium.** By inspection of
-[GTimer.cpp:42-52](../technology/GTimer.cpp#L42-L52).
-
-```cpp
-timeout.emit();
-if (m_singleShot) { stop(); }
-```
-
-A slot connected with `G::DirectConnection` runs inside `emit()`. If it does `delete timer`, the
-subsequent `stop()` — and the `m_singleShot` read before it — operate on freed memory. Using
-`deleteLater()` instead is safe, and Qt has a comparable hazard, so this is a sharp edge rather
-than a guaranteed bug. Reordering `stop()` before the emit, or holding a life-token guard across
-it, would remove it.
-
----
-
-## R8 — `GObject` is non-copyable only by accident
-
-**Severity: Low.** Probes `r1`/`r2` confirm `GObject b = a;` and `b = a;` both fail to compile
-today — but only because the class happens to contain `std::mutex` members, which implicitly
-delete the copy operations. Nothing declares that intent: there is no `= delete` anywhere in
-`technology/`.
-
-This matters because of what copying *would* do if a future refactor removed or replaced those
-mutexes. `m_life` is a `shared_ptr<int>`; a copy would raise its refcount to 2, so `~GObject()`'s
-`m_life.reset()` would no longer expire the token. Every `connect()`/`callLater()` wrapper's
-`weakLife.lock()` would keep succeeding and would then call a member function on a destroyed
-object — a use-after-free, reintroduced silently by an unrelated change.
-
-**Suggested fix:** declare the intent explicitly (delete copy and move construction/assignment).
-Cheap, and it converts a future silent regression into a compile error.
+`GEventDispatcherWin32.cpp` and `GEventDispatcherLinux.cpp` contain only defaulted constructors
+and destructors; both classes inherit `GEventDispatcherDefault` unchanged. No native message-loop
+integration exists, so *"I want to receive OS/platform's messages"* is unmet on both platforms.
+`ForAI/misson-detail-GCoreApplication.txt` sketches the intended approach (an FD the main thread
+can wait on for Linux; the harder Windows case where messages go to the thread that created the
+window). Sequence this with R12.
 
 ---
 
 ## R9 — `GCoreApplication`'s singleton is unguarded
 
-**Severity: Low.** By inspection of
-[GCoreApplication.cpp](../technology/GCoreApplication.cpp).
+**Severity: Low. Open — deferred with GCoreApplication.** By inspection.
 
 `s_instance` is a plain static pointer. The constructor assigns it unconditionally and the
-destructor nulls it unconditionally, with no check for an existing instance and no atomicity.
-Constructing two applications silently orphans the first; destroying either then leaves
-`instance()` returning `nullptr` while a live application still exists. Qt asserts on this.
+destructor nulls it unconditionally, with no duplicate check and no atomicity. Two applications
+silently orphan the first; destroying either leaves `instance()` returning `nullptr` while a live
+application still exists. Qt asserts on this.
 
 ---
 
-## R10 — Idle event loops wake roughly ten times per second
+## R11 — ThreadSanitizer: now run, and it found things
 
-**Severity: Low.** [GEventDispatcherDefault.cpp:28](../technology/GEventDispatcherDefault.cpp#L28).
+**Status: the "never been run" gap is closed.** Reproduce with:
 
-`maxWait` defaults to 100 ms and is only shortened by pending timers, never lengthened. A thread
-with no events and no timers still wakes ~10×/second forever. Not a spin and not a correctness
-bug, but it is avoidable power draw and sits in the same area as R1's mission constraint.
+```bash
+g++ -std=c++17 -g -O1 -fsanitize=thread -pthread \
+  -Itechnology -Isubmodules/external/boost \
+  -Isubmodules/external/googletest/googletest/include \
+  -Isubmodules/external/googletest/googletest \
+  technology/*.cpp tests/*.cpp \
+  submodules/external/googletest/googletest/src/gtest-all.cc -o tests_tsan
+```
+
+Measured at three points during the day, with the suite passing every time — which is the point:
+none of this is visible without TSan, and ASan cannot see it.
+
+| Code state | Tests | TSan warnings |
+|---|---|---|
+| `bd19dbb` (start of day) | 42 pass | **138** — 120 data race, 3 vptr, 15 double-lock |
+| after R2/R3/R7/R8/R10 | 46 pass | **31** — 24 data race, 3 vptr, 4 double-lock |
+| after R12/R13 | 48 pass | **18** — 14 data race, 4 double-lock |
+| after thread-confining timers | 48 pass | **13** — 11 data race, 2 double-lock |
+
+The large first drop is mostly R3: `GTimer`'s four unguarded members were being hammered across
+threads by the existing tests. The vptr races disappearing tracks the R12 fix. What remains is
+filed as R14 and is explicitly **not** triaged.
+
+*(An earlier revision of this file reported 31 as the baseline. That was the figure after the first
+defect pass had already landed, not the true starting point.)*
+
+**Remaining verification gaps:** TSan is not wired into the build system, so this was a one-off
+manual run and will rot unless someone repeats it. Coverage is still Windows/MSVC and WSL2/GCC
+only — no clang build, no 32-bit, no cross-compile, despite the mission's cross-platform and
+no-compiler-specific-tolerance requirements. And several tests in `test_defect_regressions.cpp`
+remain explicitly best-effort stress tests whose clean runs are not proof; each says so in its own
+doc comment.
 
 ---
 
-## R11 — Confidence limits of the existing test suite
+## Resolved on 2026-08-02
 
-**Severity: informational — please read before treating a green run as proof.**
+Full rationale for each in `CHANGES-20260802.md`. Summarised here so this file stays a complete
+picture:
 
-- Several regression tests in `test_defect_regressions.cpp` are explicitly *best-effort stress
-  tests*. The races they target are a few CPU instructions wide and cannot be forced from a
-  black-box test. A clean run raises confidence; it is not evidence the defect is gone. Each such
-  test says so in its own doc comment.
-- **ThreadSanitizer has never been run on this codebase.** ASan/LSan catch memory errors and
-  leaks, but most of the fixed and outstanding issues here are *data races*, which is precisely
-  what TSan is for and ASan is not. This is the single largest gap in verification.
-- Coverage is Windows/MSVC and WSL2/GCC only. No clang build, no 32-bit, no cross-compile,
-  despite the mission's cross-platform and no-compiler-specific-tolerance requirements.
-- `GObject::objectLife()` and `GTimerEvent`'s constructor remain publicly reachable by deliberate
-  decision (rationale in `CHANGES-20260801.md`), not by oversight.
-
----
+- **R2** — `scheduleCallLater()` now erases its registry entry when dispatch fails, so a later
+  call re-arms instead of the pair staying dead forever. `dispatchMetaCall()` returns `bool` to
+  report deliverability. Regression test verified by reverting the fix.
+- **R3** — `GTimer` gained a mutex covering all four members; `start()` is now atomic as a whole
+  rather than a racy read-modify-write. The documented thread-safety claim is now true.
+- **R5** — the three assertion-free `GTimer` tests were rewritten to run against a real worker
+  event loop and actually assert that the functor/member ran. They previously could not have
+  fired at all.
+- **R7** — `timerEvent()` stops a single-shot timer *before* emitting and touches no member
+  afterwards, matching Qt's ordering. **Residual, documented in the code:** `emit()` still runs
+  inside the `GSignal` member of the object, so deleting a timer outright from a directly
+  connected slot is still unsupported — use `deleteLater()`.
+- **R8** — copy and move construction/assignment are now explicitly `= delete`.
+- **R10** — an idle dispatcher with no timers now blocks indefinitely instead of waking ten times
+  a second. This required two supporting correctness fixes: `wakeUp()` had never actually been
+  able to end a predicate-based wait (it changed no state, and only appeared to work because the
+  wait was capped at 100 ms), and `interrupt()` set its flag without holding `m_mutex`, leaving a
+  lost-wakeup window that an unbounded wait would have turned into a permanent hang.
 
 ## Suggested order
 
-R1 and R2 are the two that can bite a working application at runtime, and both are small,
-well-understood fixes — those first. R3 is nearly free if the resolution is "correct the docs" and
-should not sit misleading readers either way. R8 is a handful of lines and prevents a future
-silent regression. R5 is worth doing before trusting any future timer work. R4 and R6 are design
-decisions rather than patches and want a scoping conversation first. R11 argues for a
-ThreadSanitizer run being the highest-value single action available, independent of any code
-change.
+R14 is the most valuable next step: 18 unexplained TSan warnings are worth more attention than any
+new feature, and until they are triaged the concurrency story is unfinished. R1, R9 and the
+main-thread half of R13 are all pinned to the GCoreApplication rework and should go together. R6
+is the remaining mission stage and will rework the dispatcher anyway, so it is worth doing after
+R14 rather than before. Wiring TSan into the build system is worth doing regardless — every figure
+in this document came from a manual one-off run that will rot the moment someone forgets it.

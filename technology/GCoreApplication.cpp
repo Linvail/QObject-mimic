@@ -19,15 +19,15 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
     s_instance = this;
 
 #if defined(_WIN32)
-    m_dispatcher = std::make_unique<GEventDispatcherWin32>();
+    m_dispatcher = std::make_shared<GEventDispatcherWin32>();
 #elif defined(__linux__)
-    m_dispatcher = std::make_unique<GEventDispatcherLinux>();
+    m_dispatcher = std::make_shared<GEventDispatcherLinux>();
 #else
-    m_dispatcher = std::make_unique<GEventDispatcherDefault>();
+    m_dispatcher = std::make_shared<GEventDispatcherDefault>();
 #endif
     m_mainThread = std::make_unique<GThread>();
 
-    m_mainThread->m_data->dispatcher = m_dispatcher.get();
+    m_mainThread->m_data->setDispatcher(m_dispatcher);
     GThread::s_currentThread = m_mainThread.get();
 
     this->moveToThread(m_mainThread.get());
@@ -36,7 +36,7 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
 GCoreApplication::~GCoreApplication()
 {
     this->moveToThread(nullptr);
-    m_mainThread->m_data->dispatcher = nullptr;
+    m_mainThread->m_data->setDispatcher(nullptr);
     GThread::s_currentThread = nullptr;
     s_instance = nullptr;
 }

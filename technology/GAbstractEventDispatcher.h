@@ -6,6 +6,8 @@
 #include <condition_variable>
 #include <atomic>
 
+#include <vector>
+
 class GEvent;
 class GObject;
 
@@ -17,6 +19,17 @@ class GObject;
 class GAbstractEventDispatcher
 {
 public:
+    /**
+     * @brief A timer registration, as handed between dispatchers when an object changes thread.
+     */
+    struct TimerRegistration
+    {
+        /** @brief The timer's unique id, preserved across the move. */
+        int timerId;
+        /** @brief The interval the timer was registered with, in milliseconds. */
+        int intervalMs;
+    };
+
     /**
      * @brief Constructs an event dispatcher.
      */
@@ -48,6 +61,22 @@ public:
      * Note: Thread-safe.
      */
     virtual void interrupt() = 0;
+
+    /**
+     * @brief Dispatches any pending deferred-delete events, destroying their receivers.
+     *
+     * Called when an event loop is shutting down, before the dispatcher itself goes away. Without
+     * it, every object that called deleteLater() before the loop stopped is leaked: the
+     * destructor can free the queued events but has no way to free the objects they target.
+     * Mirrors Qt, which drains DeferredDelete in QThreadPrivate::finish() for the same reason.
+     *
+     * Public rather than protected because, like processEvents()/wakeUp()/interrupt(), it drives
+     * the loop as a whole and cannot be aimed at a particular receiver.
+     *
+     * Note: Thread-safe, but intended to run on the dispatcher's own thread -- it destroys
+     * objects, and their destructors expect to run there.
+     */
+    virtual void processDeferredDeletes() = 0;
 
 protected:
     // The methods below all target a *specific* receiver object, so exposing them publicly would
@@ -92,6 +121,20 @@ protected:
      * Note: Thread-safe.
      */
     virtual void removeEventsForReceiver(GObject* receiver) = 0;
+
+    /**
+     * @brief Unregisters the receiver's timers and returns them so they can be re-registered.
+     *
+     * Used by GObject::moveToThread() to carry active timers across to the destination thread's
+     * dispatcher. The ids are handed back rather than released, so the same timer id stays valid
+     * after the move and a GTimer's cached id still matches the events it receives -- the same
+     * reason Qt notes "do not release our timer ids back to the pool" when it does this.
+     * @param receiver The receiver whose timers should be taken.
+     * @return The removed registrations; empty if the receiver had none.
+     *
+     * Note: Thread-safe.
+     */
+    virtual std::vector<TimerRegistration> takeTimersForReceiver(GObject* receiver) = 0;
 
     friend class GObject;
 };

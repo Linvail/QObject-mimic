@@ -6,6 +6,7 @@
 #include "GThread.h"
 #include "GEventDispatcherDefault.h"
 #include "GTimer.h"
+#include <atomic>
 #include <string>
 #include <future>
 
@@ -737,7 +738,9 @@ TEST(GObjectTest, CallLaterMultipleCycles)
     GObject::callLater(&receiver, &GObjectTestReceiver::onValueReceived, 100);
 
     GSignal<> syncSig1;
-    bool      sync1Done = false;
+    // Atomic: written on the worker thread and spun on here. A plain bool is a data race, which
+    // ThreadSanitizer flags (and which a compiler is free to hoist out of the loop below).
+    std::atomic<bool> sync1Done{ false };
     GObject::connect(
         syncSig1, &receiver, [&sync1Done]() { sync1Done = true; }, G::QueuedConnection);
     syncSig1.emit();

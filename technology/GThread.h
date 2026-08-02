@@ -78,9 +78,12 @@ public:
      * dispatcher raced against that thread's own start/finish lifecycle, which could delete a
      * dispatcher an active exec()/processEvents() loop was still calling into. A thread creates
      * and owns its dispatcher in start(); GCoreApplication supplies the main thread's.
-     * @return Pointer to event dispatcher, or nullptr before start().
+     *
+     * Returns a strong reference rather than a raw pointer, so the dispatcher cannot be destroyed
+     * by its owning thread finishing while the caller is still using it.
+     * @return Shared pointer to the event dispatcher, or nullptr before start(). Thread-safe.
      */
-    GAbstractEventDispatcher* eventDispatcher() const;
+    std::shared_ptr<GAbstractEventDispatcher> eventDispatcher() const;
 
     /**
      * @brief Signal emitted when the thread starts running.
@@ -115,9 +118,12 @@ protected:
      */
     int exec();
 
-public:
+private:
     /**
      * @brief Gets the thread's internal data container holding the event dispatcher.
+     *
+     * Private for the same reason as GObject::threadData(): it is the handle onto the dispatcher
+     * plumbing, not API. GObject reaches it when adopting a thread's affinity.
      * @return Shared pointer to the thread data.
      */
     std::shared_ptr<GThreadData> threadData() const
@@ -125,7 +131,6 @@ public:
         return m_data;
     }
 
-private:
     std::unique_ptr<std::thread> m_thread;
     std::shared_ptr<GThreadData> m_data;
     std::atomic<bool> m_running{false};
@@ -137,6 +142,8 @@ private:
 
     static thread_local GThread* s_currentThread;
     friend class GCoreApplication;
+    /** @brief Grants GObject access to threadData() when adopting or releasing thread affinity. */
+    friend class GObject;
 };
 
 template <typename Function, typename... Args>

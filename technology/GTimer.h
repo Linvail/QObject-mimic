@@ -6,6 +6,12 @@
 
 /**
  * @brief High-level timer class providing repetitive and single-shot timers.
+ *
+ * **No part of this class is thread-safe**, exactly as with Qt's QTimer. A GTimer must be used
+ * from the thread it lives in: start()/stop() are thread-confined because they go through
+ * GObject::startTimer()/killTimer(), and timeout is emitted by that thread's event loop. To drive
+ * a timer that lives in another thread, hop onto it first, e.g.
+ * `GObject::callLater(&timer, &GTimer::start, 50)`.
  */
 class GTimer : public GObject
 {
@@ -22,53 +28,64 @@ public:
 
     /**
      * @brief Gets the timer interval in milliseconds.
-     * @return Interval in milliseconds. Thread-safe.
+     * @return Interval in milliseconds.
      */
     int interval() const;
 
     /**
      * @brief Sets the timer interval in milliseconds.
-     * @param msec Interval in milliseconds. Thread-safe.
+     * @param msec Interval in milliseconds.
      */
     void setInterval(int msec);
 
     /**
      * @brief Checks if the timer is currently active (running).
-     * @return True if active. Thread-safe.
+     * @return True if active.
      */
     bool isActive() const;
 
     /**
      * @brief Checks if the timer is single-shot.
-     * @return True if single-shot. Thread-safe.
+     * @return True if single-shot.
      */
     bool isSingleShot() const;
 
     /**
      * @brief Sets whether the timer is single-shot.
-     * @param singleShot True for single-shot, false for periodic. Thread-safe.
+     * @param singleShot True for single-shot, false for periodic.
      */
     void setSingleShot(bool singleShot);
 
     /**
      * @brief Gets the unique ID of the internal timer.
-     * @return Unique timer ID, or -1 if inactive. Thread-safe.
+     * @return Unique timer ID, or -1 if inactive.
      */
     int timerId() const;
 
     /**
      * @brief Starts or restarts the timer with specified interval in milliseconds.
-     * @param msec Interval in milliseconds. Thread-safe.
+     *
+     * **Must be called from this timer's own thread**, because it goes through
+     * GObject::startTimer(); see that function for why. Same rule as Qt's QTimer, whose start()
+     * is likewise a plain forward to QObject::startTimer(). To start a timer that lives in
+     * another thread, hop onto that thread first, e.g.
+     * `GObject::callLater(&timer, &GTimer::start, 50)`.
+     * @param msec Interval in milliseconds.
      */
     void start(int msec);
 
     /**
-     * @brief Starts or restarts the timer using the existing interval. Thread-safe.
+     * @brief Starts or restarts the timer using the existing interval.
+     *
+     * **Must be called from this timer's own thread**; see start(int).
      */
     void start();
 
     /**
-     * @brief Stops the timer. Thread-safe.
+     * @brief Stops the timer.
+     *
+     * **Must be called from this timer's own thread**, because it goes through
+     * GObject::killTimer(). Calling it from elsewhere warns and leaves the timer running.
      */
     void stop();
 
@@ -81,7 +98,7 @@ public:
      * @brief Fires a single-shot timer executing a functor after specified delay.
      * @tparam Functor Callable slot type.
      * @param msec Delay in milliseconds.
-     * @param functor Slot function to execute. Thread-safe.
+     * @param functor Slot function to execute.
      */
     template <typename Functor> static void singleShot(int msec, Functor functor);
 
@@ -90,7 +107,7 @@ public:
      * @tparam Functor Callable slot type.
      * @param msec Delay in milliseconds.
      * @param context Target context GObject.
-     * @param functor Slot function to execute. Thread-safe.
+     * @param functor Slot function to execute.
      */
     template <typename Functor>
     static void singleShot(int msec, const GObject* context, Functor functor);
@@ -101,7 +118,7 @@ public:
      * @tparam MemberFunc Member function pointer type.
      * @param msec Delay in milliseconds.
      * @param receiver Target receiver object.
-     * @param method Member function pointer to execute. Thread-safe.
+     * @param method Member function pointer to execute.
      */
     template <typename Receiver, typename MemberFunc>
     static void singleShot(int msec, const Receiver* receiver, MemberFunc method);
@@ -114,6 +131,11 @@ protected:
     virtual void timerEvent(GTimerEvent* event) override;
 
 private:
+    // Deliberately unsynchronised, matching QTimer, which has no locking of any kind. Every
+    // member here is only ever touched from the timer's own thread: start()/stop() are
+    // thread-confined because they go through GObject::startTimer()/killTimer(), and timerEvent()
+    // is delivered by that same thread's event loop. Adding a mutex would only paper over misuse
+    // that the thread-confinement rules already forbid.
     int m_interval{0};
     int m_timerId{-1};
     bool m_singleShot{false};
@@ -168,14 +190,25 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
     class GSingleShotContextHelper : public GObject
     {
     public:
-        GSingleShotContextHelper(GObject* ctx, int ms, Functor fn)
+        GSingleShotContextHelper(int ms, Functor fn)
             : m_fn(std::move(fn))
+            , m_interval(ms)
         {
-            if (ctx)
+        }
+
+        /**
+         * @brief Registers the timer. Must run on this helper's own thread.
+         *
+         * Public only so callLater() can target it; it is not part of any API.
+         */
+        void arm()
+        {
+            m_id = startTimer(m_interval);
+            if (m_id == -1)
             {
-                this->moveToThread(ctx->thread());
+                // Nothing will ever fire, so reclaim the helper rather than leaking it.
+                delete this;
             }
-            m_id = startTimer(ms);
         }
 
     protected:
@@ -188,20 +221,30 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
             }
         }
 
-    public:
-        int timerId() const
-        {
-            return m_id;
-        }
-
     private:
         Functor m_fn;
+        int m_interval{0};
         int m_id{-1};
     };
-    auto* helper = new GSingleShotContextHelper(const_cast<GObject*>(context), msec, functor);
-    if (helper->timerId() == -1)
+
+    auto*    helper = new GSingleShotContextHelper(msec, functor);
+    GObject* ctx    = const_cast<GObject*>(context);
+
+    // startTimer() is thread-confined, so the timer has to be registered on the thread that will
+    // deliver its events -- not on whichever thread happens to call singleShot(). This mirrors
+    // Qt's QSingleShotTimer::startTimerForReceiver(), which arms directly when the receiver is on
+    // the current thread and otherwise moves itself to the receiver's thread and posts an event
+    // to start the timer there.
+    //
+    // The helper was constructed here, so its thread() is this thread.
+    if (helper->thread() == ctx->thread())
     {
-        delete helper;
+        helper->arm(); // may delete itself; do not touch `helper` afterwards
+    }
+    else
+    {
+        helper->moveToThread(ctx->thread());
+        GObject::callLater(helper, &GSingleShotContextHelper::arm);
     }
 }
 

@@ -71,10 +71,29 @@ bool GEventDispatcherDefault::processEvents()
             // (blocked on m_mutex until we release it inside wait_for, then setting the flag and
             // notifying) -- there is no window where a change can be lost.
             m_timersChanged = false;
-            m_cv.wait_for(lock,
-                          maxWait,
-                          [this]
-                          { return !m_eventQueue.empty() || m_interrupt || m_timersChanged; });
+
+            auto wakeCondition = [this] {
+                return !m_eventQueue.empty() || m_interrupt || m_timersChanged
+                       || m_wakeUpRequested;
+            };
+
+            if (m_timers.empty())
+            {
+                // Nothing is scheduled, so there is no deadline to poll for: block until
+                // something actually happens rather than waking ten times a second forever.
+                // Every state this predicate tests is changed under m_mutex by a caller that
+                // then notifies (postEvent, registerTimer, unregisterTimer, interrupt, wakeUp),
+                // so there is no wakeup to miss.
+                m_cv.wait(lock, wakeCondition);
+            }
+            else
+            {
+                m_cv.wait_for(lock, maxWait, wakeCondition);
+            }
+
+            // wakeUp() is a one-shot "return from the wait now" request; consume it so a later
+            // processEvents() call does not treat it as still pending.
+            m_wakeUpRequested = false;
         }
 
         if (m_interrupt)
@@ -242,10 +261,111 @@ void GEventDispatcherDefault::removeEventsForReceiver(GObject* receiver)
     m_timers.erase(itTimer, m_timers.end());
 }
 
-void GEventDispatcherDefault::wakeUp() { m_cv.notify_all(); }
+std::vector<GAbstractEventDispatcher::TimerRegistration>
+GEventDispatcherDefault::takeTimersForReceiver(GObject* receiver)
+{
+    std::vector<TimerRegistration> taken;
+    if (!receiver)
+    {
+        return taken;
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = std::remove_if(m_timers.begin(),
+                             m_timers.end(),
+                             [receiver, &taken](const TimerData& td)
+                             {
+                                 if (td.receiver != receiver)
+                                 {
+                                     return false;
+                                 }
+                                 taken.push_back({ td.timerId, td.intervalMs });
+                                 return true;
+                             });
+    if (it != m_timers.end())
+    {
+        m_timers.erase(it, m_timers.end());
+        // The wait deadline was computed from a timer list that no longer holds these entries.
+        m_timersChanged = true;
+        m_cv.notify_all();
+    }
+
+    return taken;
+}
+
+void GEventDispatcherDefault::processDeferredDeletes()
+{
+    // Destroying an object can queue further deferred deletes -- a cleanup callback may
+    // deleteLater() something else -- so keep draining until none remain, as Qt does rather than
+    // capping the number of passes.
+    //
+    // Receivers already destroyed in an earlier pass are tracked for the same reason
+    // processEvents() tracks them: two deleteLater() calls on one object queue two events, and
+    // dispatching the second after the first has destroyed it would be a use-after-free.
+    std::unordered_set<GObject*> deletedReceivers;
+
+    for (;;)
+    {
+        std::vector<EventPair> deferredDeletes;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (auto it = m_eventQueue.begin(); it != m_eventQueue.end();)
+            {
+                if (it->event && it->event->type() == GEvent::DeferredDelete)
+                {
+                    deferredDeletes.push_back(*it);
+                    it = m_eventQueue.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+        }
+
+        if (deferredDeletes.empty())
+        {
+            break;
+        }
+
+        // Dispatch with m_mutex released: ~GObject() calls removeEventsForReceiver(), which takes
+        // the same non-recursive mutex and would otherwise deadlock.
+        for (const auto& ep : deferredDeletes)
+        {
+            if (ep.receiver && deletedReceivers.insert(ep.receiver).second)
+            {
+                ep.receiver->event(ep.event);
+            }
+            delete ep.event;
+        }
+    }
+}
+
+void GEventDispatcherDefault::wakeUp()
+{
+    // The flag must be set under m_mutex, not just notified. processEvents() waits on a
+    // predicate, so a bare notify_all() is a no-op unless some state the predicate tests has
+    // changed -- previously wakeUp() only ever "worked" because the wait was capped at 100ms and
+    // would have returned on its own anyway.
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_wakeUpRequested = true;
+    }
+    m_cv.notify_all();
+}
 
 void GEventDispatcherDefault::interrupt()
 {
-    m_interrupt = true;
+    // Taking m_mutex here is what makes the unbounded wait in processEvents() safe. Setting the
+    // atomic without the lock leaves a lost-wakeup window: a waiter that has already evaluated
+    // its predicate as false, but has not yet atomically released the lock and blocked, would
+    // miss both the flag and the notification. That was survivable while the wait was capped at
+    // 100ms; with no cap it would hang forever. Blocking on m_mutex here means this can only
+    // land either fully before the predicate check or after the waiter is genuinely blocked.
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_interrupt = true;
+    }
     m_cv.notify_all();
 }

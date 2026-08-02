@@ -7,7 +7,15 @@ GTimer::GTimer()
 
 GTimer::~GTimer()
 {
-    stop();
+    // Matches QTimer::~QTimer(), which likewise stops a still-running timer. Note the consequence
+    // Qt shares: killTimer() is thread-confined, so destroying an *active* timer from a thread
+    // other than its own warns. That is a genuine misuse signal, not noise -- destroy the timer on
+    // the thread it lives in. Nothing leaks either way: ~GObject() calls removeEventsForReceiver(),
+    // which strips this object's timer registrations from the dispatcher regardless.
+    if (m_active)
+    {
+        stop();
+    }
 }
 
 int GTimer::interval() const
@@ -42,15 +50,15 @@ int GTimer::timerId() const
 
 void GTimer::start(int msec)
 {
-    stop();
     m_interval = msec;
-    m_timerId = startTimer(m_interval);
-    m_active = (m_timerId != -1);
+    start();
 }
 
 void GTimer::start()
 {
-    start(m_interval);
+    stop();
+    m_timerId = startTimer(m_interval);
+    m_active = (m_timerId != -1);
 }
 
 void GTimer::stop()
@@ -65,12 +73,22 @@ void GTimer::stop()
 
 void GTimer::timerEvent(GTimerEvent* event)
 {
-    if (event && event->timerId() == m_timerId)
+    if (!event || event->timerId() != m_timerId)
     {
-        timeout.emit();
-        if (m_singleShot)
-        {
-            stop();
-        }
+        return;
     }
+
+    // Stop before emitting, matching QTimer::timerEvent()'s ordering: a slot must not observe a
+    // single-shot timer as still active, and emitting last means none of our own code touches this
+    // object after user code has run.
+    //
+    // Note this narrows -- but does not eliminate -- the hazard of a directly-connected slot
+    // deleting the timer: emit() is still executing inside the GSignal member of the object being
+    // destroyed. Use deleteLater() from a timeout slot; deleting outright is not supported.
+    if (m_singleShot)
+    {
+        stop();
+    }
+
+    timeout.emit();
 }

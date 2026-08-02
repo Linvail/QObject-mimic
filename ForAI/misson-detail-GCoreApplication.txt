@@ -1,0 +1,30 @@
+The purpose of GCoreApplication is a base class of the real application class.
+
+Like:
+class MyApplication : public GCoreApplication
+{
+    void init();
+    void deInit();
+};
+
+It's supposed to be created and run a loop in the main thread.
+For example:
+
+int main(...)
+{
+    MyApplication app;
+    app.init();
+    int ret = app.exec(); // A message/event loop runs here.
+    app.deInit();
+    return ret;
+}
+
+So, there should be loop in exec(). But how to achieve that depends on OS.
+On Linux Wayland/X11, it might be simpler because we can use FD.
+We can use a separate thread to listen on the FD while keep the main thread wait (no CPU-spin).
+If the FD hear something, we wake up the main thread and extract the messages from the FD.
+
+On Windows, the Windows message is only sent to the thread from created the window.
+So, it is tricky. We need to make the main thread wait, but our loop must be waken when our event
+is incoming or the OS message is incoming.
+
