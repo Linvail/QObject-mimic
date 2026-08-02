@@ -1,5 +1,5 @@
 from waflib import Options, Logs, Build, Scripting
-import sys, shutil, os
+import sys, json, os
 
 local_tools = [
     "variant-builder",
@@ -15,21 +15,106 @@ if clang_db_module and not getattr(clang_db_module, '_patched_for_root_copy', Fa
     setattr(clang_db_module, '_patched_for_root_copy', True)
     old_write = clang_db_module.ClangDbContext.write_compilation_database
 
+    # Flags whose include-path argument is a separate token (e.g. `-isystem X`),
+    # as opposed to concatenated (e.g. `-IX` / `/IX`).
+    _SEPARATE_TOKEN_INCLUDE_FLAGS = ('-isystem', '-iquote', '-idirafter')
+    _CONCATENATED_INCLUDE_PREFIXES = ('-I', '/I')
+
     ##
-    # @brief Custom write method for ClangDbContext to copy compile_commands.json to the workspace root.
+    # @brief Resolves aPath against aDirectory if aPath is relative; returns it unchanged if
+    # already absolute.
+    #
+    def _make_absolute(aPath, aDirectory):
+        if os.path.isabs(aPath):
+            return aPath
+        return os.path.normpath(os.path.join(aDirectory, aPath))
+
+    ##
+    # @brief Rewrites every relative path in a compile_commands.json entry (the "file" key, the
+    # positional source-file argument, and every include-path argument) to an absolute path,
+    # resolved against that entry's own "directory". A JSON compilation database entry's relative
+    # paths are only well-defined relative to "directory" (see
+    # https://clang.llvm.org/docs/JSONCompilationDatabase.html); once this file is copied
+    # somewhere else (the workspace root, so editors/clangd find it automatically), many real
+    # tools resolve relative entries against wherever the file itself lives instead of strictly
+    # honoring "directory". Making every path absolute removes that ambiguity entirely, so the
+    # copy is correct regardless of which convention the consuming tool follows.
+    #
+    # @param aEntry A single compile_commands.json entry (dict with directory/file/arguments).
+    #
+    def _make_entry_paths_absolute(aEntry):
+        directory = aEntry.get('directory', '')
+        original_file = aEntry.get('file')
+        absolute_file = None
+        if original_file:
+            absolute_file = _make_absolute(original_file, directory)
+            aEntry['file'] = absolute_file
+
+        arguments = aEntry.get('arguments')
+        if not arguments:
+            return
+
+        rewritten = []
+        take_next_as_path = False
+        for arg in arguments:
+            if take_next_as_path:
+                take_next_as_path = False
+                rewritten.append(_make_absolute(arg, directory))
+                continue
+
+            if arg in _SEPARATE_TOKEN_INCLUDE_FLAGS:
+                rewritten.append(arg)
+                take_next_as_path = True
+                continue
+
+            if original_file is not None and arg == original_file:
+                # The bare positional source-file argument -- same relative string as "file",
+                # so replace it with the same absolute path already computed above.
+                rewritten.append(absolute_file)
+                continue
+
+            matched_prefix = None
+            for prefix in _CONCATENATED_INCLUDE_PREFIXES:
+                if arg.startswith(prefix) and len(arg) > len(prefix):
+                    matched_prefix = prefix
+                    break
+            if matched_prefix:
+                arg = matched_prefix + _make_absolute(arg[len(matched_prefix):], directory)
+
+            rewritten.append(arg)
+
+        aEntry['arguments'] = rewritten
+
+    ##
+    # @brief Custom write method for ClangDbContext: writes the native (directory-relative)
+    # compile_commands.json as usual, then writes a SEPARATE copy to the workspace root with every
+    # path made absolute, so editors/clangd that auto-discover it at the root resolve correctly.
     #
     # @param self The ClangDbContext instance.
     #
     def new_write(self):
         old_write(self)
         database_file = self.bldnode.make_node('compile_commands.json')
-        if os.path.exists(database_file.abspath()):
-            dest_path = os.path.join(self.srcnode.abspath(), 'compile_commands.json')
-            try:
-                shutil.copy2(database_file.abspath(), dest_path)
-                Logs.info('Copied compile_commands.json to workspace root: %s' % dest_path)
-            except Exception as e:
-                Logs.warn('Failed to copy compile_commands.json to root: %s' % e)
+        if not os.path.exists(database_file.abspath()):
+            return
+
+        dest_path = os.path.join(self.srcnode.abspath(), 'compile_commands.json')
+        try:
+            with open(database_file.abspath(), 'r', encoding='utf-8') as f:
+                entries = json.load(f)
+
+            for entry in entries:
+                _make_entry_paths_absolute(entry)
+
+            with open(dest_path, 'w', encoding='utf-8') as f:
+                json.dump(entries, f, indent=1)
+
+            Logs.info(
+                'Copied compile_commands.json to workspace root (paths made absolute): %s'
+                % dest_path
+            )
+        except Exception as e:
+            Logs.warn('Failed to copy compile_commands.json to root: %s' % e)
 
     clang_db_module.ClangDbContext.write_compilation_database = new_write
 
