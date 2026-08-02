@@ -774,6 +774,12 @@ private:
      */
     friend struct GCallLaterRegistry;
 
+    /**
+     * @brief Grants GThread access to dispatchMetaCall(), which GThread::post() uses to queue an
+     * arbitrary task onto itself.
+     */
+    friend class GThread;
+
     std::shared_ptr<int> m_life;
     std::shared_ptr<GThreadData> m_threadData;
     mutable std::mutex m_threadDataMutex;

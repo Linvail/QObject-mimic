@@ -3,6 +3,8 @@
 #include "GSignal.h"
 #include "GEventDispatcherDefault.h"
 #include <chrono>
+#include <future>
+#include <thread>
 #include <vector>
 #include <atomic>
 
@@ -219,4 +221,100 @@ TEST(GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle)
     thread.quit();
     thread.wait();
     EXPECT_TRUE(thread.isFinished());
+}
+
+/**
+ * @brief Tests GThread::post() runs the task on the target thread, from another thread.
+ */
+TEST(GThreadTest, PostRunsTaskOnTargetThread)
+{
+    GThread worker;
+    worker.start();
+    while (!worker.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+
+    std::promise<GThread*> ranOnPromise;
+    auto ranOnFuture = ranOnPromise.get_future();
+
+    EXPECT_TRUE(worker.post([&ranOnPromise]()
+                            { ranOnPromise.set_value(GThread::currentThread()); }));
+
+    ASSERT_EQ(ranOnFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "posted task never ran.";
+    EXPECT_EQ(ranOnFuture.get(), &worker);
+
+    worker.quit();
+    worker.wait();
+}
+
+/**
+ * @brief Tests GThread::post() always defers, even when called from the target thread itself.
+ *
+ * Regression coverage for the reason post() explicitly requests G::QueuedConnection rather than
+ * G::AutoConnection: Auto would resolve to a same-thread direct call and run the task inline,
+ * before post() returns, instead of on a later loop iteration.
+ */
+TEST(GThreadTest, PostFromOwnThreadStillDefers)
+{
+    GThread worker;
+    worker.start();
+    while (!worker.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+
+    std::promise<void> orderPromise;
+    auto orderFuture = orderPromise.get_future();
+    std::atomic<bool> postReturnedBeforeTaskRan{false};
+
+    // Ask the worker to post a task to itself, and observe whether post() returns before or
+    // after that inner task actually executes.
+    ASSERT_TRUE(worker.post(
+        [&worker, &orderPromise, &postReturnedBeforeTaskRan]()
+        {
+            bool innerRan = false;
+            worker.post([&innerRan]() { innerRan = true; });
+            // If post() deferred correctly, innerRan is still false immediately after the call.
+            postReturnedBeforeTaskRan.store(!innerRan);
+            orderPromise.set_value();
+        }));
+
+    ASSERT_EQ(orderFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_TRUE(postReturnedBeforeTaskRan.load())
+        << "post() ran the task inline instead of deferring it.";
+
+    worker.quit();
+    worker.wait();
+}
+
+/**
+ * @brief Tests GThread::post() reports failure and drops the task when there is no dispatcher.
+ */
+TEST(GThreadTest, PostBeforeStartFails)
+{
+    GThread thread;
+    bool ran = false;
+    EXPECT_FALSE(thread.post([&ran]() { ran = true; }))
+        << "post() should fail before start() -- there is no dispatcher yet.";
+    EXPECT_FALSE(ran);
+}
+
+/**
+ * @brief Tests GThread::post() rejects an empty std::function without touching the dispatcher.
+ */
+TEST(GThreadTest, PostRejectsEmptyTask)
+{
+    GThread worker;
+    worker.start();
+    while (!worker.eventDispatcher())
+    {
+        std::this_thread::yield();
+    }
+
+    EXPECT_FALSE(worker.post(std::function<void()>()));
+
+    worker.quit();
+    worker.wait();
 }

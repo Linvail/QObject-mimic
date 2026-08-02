@@ -166,6 +166,17 @@ std::shared_ptr<GAbstractEventDispatcher> GThread::eventDispatcher() const
     return m_data->dispatcher();
 }
 
+bool GThread::post(std::function<void()> task)
+{
+    if (!task)
+    {
+        return false;
+    }
+    // Explicit QueuedConnection (not Auto): post() must always defer, even when called from this
+    // thread itself -- Auto would resolve to a same-thread call and run inline instead.
+    return dispatchMetaCall(this, std::move(task), G::QueuedConnection);
+}
+
 void GThread::run()
 {
     exec();

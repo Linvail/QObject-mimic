@@ -30,6 +30,15 @@ GCoreApplication::GCoreApplication(int& argc, char** argv)
     m_mainThread->m_data->setDispatcher(m_dispatcher);
     GThread::s_currentThread = m_mainThread.get();
 
+    // Self-adopt, mirroring exactly what GThread::start()'s lambda does for a worker thread
+    // (s_currentThread = this; this->moveToThread(this);). Without this, m_mainThread's own
+    // GObject-inherited thread affinity (m_threadData, set via moveToThread) never gets pointed
+    // at its own dispatcher-holding GThreadData (m_data) -- those are two separate fields that
+    // only coincide once an object has been moved onto itself. Anything that targets the
+    // GThread object directly (dispatchMetaCall(mainThreadPtr, ...), e.g. via GThread::post())
+    // would silently fail to find a dispatcher without this, even though one exists.
+    m_mainThread->moveToThread(m_mainThread.get());
+
     this->moveToThread(m_mainThread.get());
 }
 

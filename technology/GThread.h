@@ -86,6 +86,22 @@ public:
     std::shared_ptr<GAbstractEventDispatcher> eventDispatcher() const;
 
     /**
+     * @brief Queues an arbitrary task to run on this thread's event loop.
+     *
+     * Always deferred to a later iteration of this thread's loop -- never run inline, even when
+     * post() is called from this thread itself. Implemented as a thin wrapper over
+     * GObject::dispatchMetaCall() targeting this GThread as both context and receiver, so it goes
+     * through the exact same queue, GMetaCallEvent, and lifetime handling as every other queued
+     * call in this library (removeEventsForReceiver() on destruction, processDeferredDeletes() on
+     * shutdown, etc.) rather than a second, parallel task queue.
+     * @param task The callable to run on this thread. Ignored (returns false) if empty.
+     * @return True if the task was queued; false if this thread has no dispatcher yet (before
+     * start()/exec(), or after it has fully finished and released it), in which case the task is
+     * dropped rather than run.
+     */
+    bool post(std::function<void()> task);
+
+    /**
      * @brief Signal emitted when the thread starts running.
      */
     GSignal<> started;
