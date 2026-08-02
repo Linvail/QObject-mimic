@@ -29,12 +29,19 @@ def options(opt):
 
 
 def configure(ctx):
+
+    prior_variant = ctx.variant
+    root = ctx.env
+
     if platform.system() == "Windows":
         ctx.load("toolchain-windows", tooldir="tools")
-        ctx.configure_win64_msvc()
-        ctx.configure_win32_msvc()
+        ctx.configure_win64_msvc(root)
+        ctx.configure_win32_msvc(root)
     elif platform.system() == "Linux":
         ctx.load("toolchain-linux", tooldir="tools")
-        ctx.configure_Linux_x64_gcc()
-        ctx.configure_Linux_x64_clang()
-        ctx.configure_Windows_x64_Linux_clang()
+        ctx.configure_Linux_x64_gcc(root)
+        ctx.configure_Linux_x64_clang(root)
+        ctx.configure_Windows_x64_Linux_clang(root)
+
+    # Restore the original environment and variant
+    ctx.variant = prior_variant

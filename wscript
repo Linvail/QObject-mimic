@@ -13,3 +13,13 @@ elif platform.system() == "Linux":
 
 projects = ["Tests"]
 modes = ["debug", "release"]
+
+
+if platform.system() == "Windows":
+    project_toolchains = {
+        "Tests": ["win64-msvc", "win32-msvc"],
+    }
+elif platform.system() == "Linux":
+    project_toolchains = {
+        "Tests": ["linux64-clang", "linux64-gcc", "linux-2-win64-clang"],
+    }

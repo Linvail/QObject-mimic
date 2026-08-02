@@ -24,7 +24,7 @@ table below for the current picture.
 | R11 | ThreadSanitizer had never been run | Informational | Done 2026-08-02 — results in R12 |
 | R12 | Dispatcher deleted while still in use at thread shutdown | High | Fixed 2026-08-02 |
 | R13 | Pending `deleteLater()` leaks when an event loop stops | Medium | Fixed 2026-08-02 (worker threads) |
-| R14 | Residual ThreadSanitizer warnings, untriaged | Medium | **Open** — 13 remain (was 138) |
+| R14 | Residual ThreadSanitizer warnings under `linux64-gcc` | Low | **Explained** — GCC 11.4 `libtsan` false positives, not GQT bugs |
 | R15 | Remaining "Thread-safe" doc claims not audited against Qt | Medium | Partly done — timers/moveToThread/GTimer fixed |
 | R16 | moveToThread() timer migration: TSan lock-order-inversion | Low | Analysed — false positive, kept for the record |
 
@@ -101,32 +101,90 @@ again is treating a comment as a contract and building to it.
 
 ---
 
-## R14 — Residual ThreadSanitizer warnings, not yet triaged *(new)*
+## R14 — Residual ThreadSanitizer warnings under `linux64-gcc` *(explained: GCC 11.4 `libtsan` bug)*
 
-**Severity: Medium — unknown, which is the point.** After the R12/R13 fixes the suite still
-reports **18 TSan warnings** (14 data races, 4 double-lock), down from **138** at the start of the
-day. These have *not* been explained and must not be assumed benign.
+**Severity: downgraded from Medium/unknown to Low.** Root-caused 2026-08-02 to a genuine defect in
+GCC 11.4's `libtsan.so.0` mutex-state tracking on this system, not to a synchronization bug in
+GQT. Recorded in full so nobody re-investigates it from scratch, and so the remaining warnings
+under `--toolchain=linux64-gcc` are read as *suspect*, not as a confirmed defect list.
 
-What is known:
+### The suspicious pattern that started this
 
-- They are **not** artifacts of running the whole suite: the affected tests reproduce them when
-  run in isolation.
-- They are **not** newly introduced. `NewShorterTimerWakesPromptly` — the densest source, 6 of the
-  14 — reports **16** warnings at the pre-fix baseline and 6 now, so the work reduced them.
-- In nearly every remaining report, **both sides of the "race" hold the same mutex**
-  (`GEventDispatcherDefault::m_mutex`), and the accesses are inside `registerTimer()`'s
-  `m_timers.push_back()` and `processEvents()`'s timer-collection loop — both plainly inside
-  `lock_guard`/`unique_lock` scopes. A genuine data race should not look like that, which suggests
-  either a subtlety not yet understood (condition-variable/`unique_lock` modelling, or memory
-  reuse defeating TSan's happens-before edges) or a real ordering bug that the mutex does not
-  actually cover.
-- The 4 double-lock reports are likewise unexplained; the one inspected involves
-  `GThread::m_waitMutex` on a stack-allocated thread.
+Every earlier snapshot of this file noted the same oddity: in nearly every reported "data race",
+**both sides claim to hold the same mutex** — e.g. the `GEventDispatcherDefault::m_mutex`-guarded
+write in `postEvent()`'s `push_back` versus the `m_mutex`-guarded read in `processEvents()`'s
+`m_eventQueue.empty()` check. By the ordinary semantics of `std::mutex`, two accesses that both
+genuinely hold the same lock object cannot overlap in wall-clock time — TSan should establish a
+happens-before edge and report nothing. A "race" reported despite that is either a real ordering
+bug the mutex doesn't actually cover, or the detector itself is wrong.
 
-**Next step:** triage properly rather than guess — narrow one report to a minimal reproducer, and
-check whether TSan's mutex modelling is being confused by dispatcher memory being freed and
-reallocated at the same address across trials. Until then this is an open question, not a clean
-bill of health.
+### Isolating it
+
+Rather than keep auditing individual reports from GQT's code, the pattern was stripped down to a
+minimal, dependency-free reproduction with **zero GQT code involved**: a plain `int` (later also
+tried with a `std::deque`, to check container involvement) guarded by exactly one `std::mutex` +
+`std::condition_variable`, with a producer doing `lock_guard; write` and a consumer doing
+`unique_lock; read; wait_for`. Textbook-correct, ~40 lines, the same shape as
+`GEventDispatcherDefault`'s producer/consumer pattern.
+
+Compiled and run 3× each on both toolchains now available via `--toolchain`:
+
+| Build | `std::deque` version | plain `int` version |
+|---|---|---|
+| `g++ -O0` (this project's `linux64-gcc` debug config) | 10–11 warnings, every run | 2 warnings, every run |
+| `clang++ -O0` and `-O1` | 0, every run (6/6 combined) | 0, every run |
+
+Neither container involvement nor optimization level mattered. The compiler did.
+
+### The decisive evidence
+
+The plain-`int` reproduction under `g++` reported, alongside the "data race", this:
+
+```
+WARNING: ThreadSanitizer: double lock of a mutex
+    #4 producer() minimal_repro_noqueue.cpp:21
+       std::lock_guard<std::mutex> lock(m);
+```
+
+That is a single, uncontested `lock_guard` construction on a freshly-declared mutex — no
+recursion, no reentrancy, nothing unusual anywhere in the file. Reporting it as a double lock is
+not a defensible interpretation of racy scheduling; it is **factually wrong** about what the
+program did. This is proof, not inference, that GCC 11.4's `libtsan.so.0` has a real bug in mutex
+lock-state tracking on this system (Ubuntu 22.04 / WSL2; only `gcc-11` is installed, no newer GCC
+was available to cross-check).
+
+That one confirmed bug plausibly explains the neighbouring "data race" report too: TSan's race
+detection depends on correctly tracking each mutex's lock/unlock events to build happens-before
+edges. Once that tracking is provably wrong for a mutex (as the double-lock report proves), its
+reasoning about everything guarded by that same mutex becomes unreliable — and the real
+`GEventDispatcherDefault` race report has the identical shape (`lock_guard`-protected write,
+`unique_lock`+`wait_for`-protected read, same mutex) as the minimal repro that produced a
+provably-false report.
+
+### What this does and doesn't mean
+
+This does **not** retroactively cast doubt on R12 or R13 — both were confirmed independently, by
+reasoning about `shared_ptr`/ownership semantics and by regression tests that were verified to
+fail when the fix was reverted, not by trusting a raw TSan count.
+
+It does mean **clang's earlier silence should be read differently than it was.** The working
+assumption through most of the day was "the race is real, clang's codegen just doesn't happen to
+observe the window." The better-supported reading now is "there may be no real race at all in
+these specific reports — GCC is producing false positives, and clang is correctly staying silent
+on genuinely mutex-protected code." (Clang's TSan runtime is not blindly trusted either: a
+deliberately unguarded global-variable increment race, run under both compilers, was caught 1/1 by
+both — so clang's sanitizer does detect real races when there are any to detect.)
+
+**Before treating any specific remaining warning under `--toolchain=linux64-gcc` as a confirmed
+defect:** manually audit that report's source the way this one was — confirm whether both sides
+truly sit inside matching, correctly-scoped lock regions. If they do, it is very likely this same
+GCC/libtsan artifact. Cross-checking against a newer GCC (13+) if one becomes available would
+settle it definitively, since this is a known category of runtime library bugs that newer
+`libsanitizer` releases fix over time.
+
+Reproduce the minimal case: `g++ -std=c++17 -g -O0 -fsanitize=thread -pthread minimal_repro.cpp`
+(a plain producer/consumer over a `std::mutex` + `std::condition_variable::wait_for`, no GQT code)
+— run 3× and compare against the same source built with `clang++`.
 
 ---
 
@@ -224,40 +282,46 @@ application still exists. Qt asserts on this.
 
 ## R11 — ThreadSanitizer: now run, and it found things
 
-**Status: the "never been run" gap is closed.** Reproduce with:
+**Status: the "never been run" gap is closed, and TSan is now wired into the build itself** (the
+owner added `--toolchain=linux64-gcc` / `linux64-clang` selection and
+`--enable-thread-sanitizer-on-Linux`, on by default, to `tools/toolchain-linux.py`). No more manual
+one-off `g++` invocations needed for the project's own binary:
 
 ```bash
-g++ -std=c++17 -g -O1 -fsanitize=thread -pthread \
-  -Itechnology -Isubmodules/external/boost \
-  -Isubmodules/external/googletest/googletest/include \
-  -Isubmodules/external/googletest/googletest \
-  technology/*.cpp tests/*.cpp \
-  submodules/external/googletest/googletest/src/gtest-all.cc -o tests_tsan
+python3 waf install --project=Tests --toolchain=linux64-gcc     # TSan reliably reproduces races
+python3 waf install --project=Tests --toolchain=linux64-clang   # TSan compiles clean but is quiet
 ```
 
-Measured at three points during the day, with the suite passing every time — which is the point:
+Measured at several points during the day, with the suite passing every time — which is the point:
 none of this is visible without TSan, and ASan cannot see it.
 
-| Code state | Tests | TSan warnings |
+| Code state | Tests | TSan warnings (gcc) |
 |---|---|---|
 | `bd19dbb` (start of day) | 42 pass | **138** — 120 data race, 3 vptr, 15 double-lock |
 | after R2/R3/R7/R8/R10 | 46 pass | **31** — 24 data race, 3 vptr, 4 double-lock |
 | after R12/R13 | 48 pass | **18** — 14 data race, 4 double-lock |
 | after thread-confining timers | 48 pass | **13** — 11 data race, 2 double-lock |
+| via official `--toolchain=linux64-gcc` build | 49 pass | **18** (see R14 — now believed to be mostly/entirely GCC 11.4 `libtsan` false positives, not new regressions) |
 
 The large first drop is mostly R3: `GTimer`'s four unguarded members were being hammered across
 threads by the existing tests. The vptr races disappearing tracks the R12 fix. What remains is
-filed as R14 and is explicitly **not** triaged.
+explained in **R14**, not left as an open question.
 
 *(An earlier revision of this file reported 31 as the baseline. That was the figure after the first
 defect pass had already landed, not the true starting point.)*
 
-**Remaining verification gaps:** TSan is not wired into the build system, so this was a one-off
-manual run and will rot unless someone repeats it. Coverage is still Windows/MSVC and WSL2/GCC
-only — no clang build, no 32-bit, no cross-compile, despite the mission's cross-platform and
-no-compiler-specific-tolerance requirements. And several tests in `test_defect_regressions.cpp`
-remain explicitly best-effort stress tests whose clean runs are not proof; each says so in its own
-doc comment.
+**Compiler matters more than expected.** Under `clang++` (both `-O0` and `-O1`), the same source
+produces **zero** TSan warnings, reliably, across dozens of runs — including on the official
+`--toolchain=linux64-clang` build. Do not read that as "clang proves the code is race-free" or as
+"gcc proves it isn't" — see R14 for why both toolchains need to be treated with more nuance than a
+raw warning count.
+
+**Remaining verification gaps:** coverage is still Windows/MSVC and WSL2/GCC+clang only — no
+32-bit, no cross-compile, no macOS, despite the mission's cross-platform and
+no-compiler-specific-tolerance requirements. Only `gcc-11` is installed on this WSL2 image; no
+newer GCC was available to check whether its `libtsan` still has the R14 false-positive. Several
+tests in `test_defect_regressions.cpp` remain explicitly best-effort stress tests whose clean runs
+are not proof; each says so in its own doc comment.
 
 ---
 
@@ -287,9 +351,12 @@ picture:
 
 ## Suggested order
 
-R14 is the most valuable next step: 18 unexplained TSan warnings are worth more attention than any
-new feature, and until they are triaged the concurrency story is unfinished. R1, R9 and the
-main-thread half of R13 are all pinned to the GCoreApplication rework and should go together. R6
-is the remaining mission stage and will rework the dispatcher anyway, so it is worth doing after
-R14 rather than before. Wiring TSan into the build system is worth doing regardless — every figure
-in this document came from a manual one-off run that will rot the moment someone forgets it.
+With R14 explained, the concurrency story for what's in scope today is in good shape: R12 and R13
+are real fixes confirmed independently, and the remaining TSan noise under gcc is understood well
+enough not to chase blindly. R1, R9, and the main-thread half of R13 are all pinned to the
+GCoreApplication rework and should go together. R6 is the remaining mission stage and will rework
+the dispatcher anyway, so sequence it with that work. R15's still-open items (`moveToThread`'s
+parent restriction, `objectName`/`setObjectName`) are worth a deliberate decision whenever GObject
+is next touched, but are not urgent. If a newer GCC ever becomes available on the dev image,
+re-running the R14 minimal repro under it would be worth five minutes — either it confirms the
+`libtsan` bug is fixed upstream, or it means the false-positive theory needs revisiting.

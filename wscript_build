@@ -2,40 +2,44 @@ from waflib import Options, Logs
 import platform, os
 
 
-def setup_build_env(bld):
-    target_platform = bld.target_platform
-    arch = bld.target_arch
-    compiler = "gcc"
+def select_toolchain(bld):
+    selected_toolchain = bld.toolchain
+    if selected_toolchain:
+        return selected_toolchain
+
     host_platform = platform.system()
     if host_platform == "Windows":
-        compiler = "msvc"
-    elif host_platform == "Linux" and target_platform == "Windows":
-        # Cross-compiling from Linux to Windows, so we use clang.
-        compiler = "clang"
+        return "win64-msvc"
+    elif host_platform == "Linux" and bld.env.DEST_OS == "win32":
+        # Cross-compiling from Linux to Windows.
+        return "linux-2-win64-clang"
     elif host_platform == "Linux":
-        # TODO: Allow user to choose gcc.
-        compiler = "clang"
+        return "linux64-clang"
     else:
         bld.fatal("Unsupported host platform: %s" % host_platform)
 
-    env_name = "%s-%s-%s-%s-%s" % (
-        target_platform,
-        arch,
-        host_platform,
-        compiler,
-        bld.mode,
-    )
 
-    if env_name not in bld.all_envs:
-        bld.fatal("Environment '%s' does not exist." % env_name)
+def make_toolchain_with_mode(bld, toolchain_name):
+    full_toolchain_name = "%s-%s" % (toolchain_name, bld.mode)
 
-    env = bld.all_envs[env_name].derive()
-    bld.set_env(env)
-    return env
+    try:
+        e = bld.all_envs[full_toolchain_name]
+    except KeyError:
+        # Fallback to the base toolchain if the toolchain with mode is not found.
+        e = bld.all_envs[toolchain_name]
+    if not e.ENV_VALID:
+        bld.fatal(
+            "Toolchain '%s' is not valid. Please check the configuration and try again."
+            % toolchain_name
+        )
+    else:
+        return e.derive()
 
 
 def build_tests(bld):
-    setup_build_env(bld)
+    toolchain = select_toolchain(bld)
+    env = make_toolchain_with_mode(bld, toolchain)
+    bld.set_env(env)
 
     if (
         platform.system() == "Windows"

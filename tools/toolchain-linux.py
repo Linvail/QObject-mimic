@@ -4,64 +4,17 @@ import glob, os
 
 
 @conf
-def configure_Linux_x64_gcc(ctx):
+def configure_Linux_x64_gcc(ctx, root):
     prev_variant = ctx.variant
 
-    env_name = "Linux-x64-Linux-gcc"
+    env_name = "linux64-gcc"
     Logs.info("Configuring %s" % env_name)
-    ctx.setenv(env_name, ctx.env)
+    ctx.setenv(env_name, root)
 
     ctx.load("gcc gxx")
     ctx.load("gccdeps", tooldir="submodules/external/waf/waflib/extras")
 
     ctx.env.append_unique("CXXFLAGS", ["-std=c++17"])
-
-    """
-    For debug build
-    """
-    base_env = ctx.env
-    ctx.setenv("%s-debug" % env_name, base_env)
-
-    for flag in ("CFLAGS", "CXXFLAGS"):
-        ctx.env.append_unique(flag, ["-g", "-O0", "-fsanitize=address"])
-    ctx.env.append_unique("LINKFLAGS", ["-fsanitize=address"])
-
-    """
-    For release build
-    """
-    ctx.setenv("%s-release" % env_name, base_env)
-
-    ctx.env.append_unique("DEFINES", ["NDEBUG"])
-
-    for flag in ("CFLAGS", "CXXFLAGS"):
-        ctx.env.append_unique(flag, ["-O2"])
-
-    ctx.env.ENV_VALID = True
-
-    ctx.variant = prev_variant
-
-
-@conf
-def configure_Linux_x64_clang(ctx):
-    prev_variant = ctx.variant
-
-    env_name = "Linux-x64-Linux-clang"
-    Logs.info("Configuring %s" % env_name)
-    ctx.setenv(env_name, ctx.env)
-
-    ctx.load("clang clangxx")
-    ctx.load("gccdeps", tooldir="submodules/external/waf/waflib/extras")
-
-    ctx.env.append_unique("CXXFLAGS", ["-std=c++17"])
-
-    """
-    For debug build
-    """
-    base_env = ctx.env
-    ctx.setenv("%s-debug" % env_name, base_env)
-
-    for flag in ("CFLAGS", "CXXFLAGS"):
-        ctx.env.append_unique(flag, ["-g", "-O0"])
 
     if Options.options.enable_address_sanitizer_on_Linux:
         for flag in ("CFLAGS", "CXXFLAGS"):
@@ -72,6 +25,17 @@ def configure_Linux_x64_clang(ctx):
             ctx.env.append_unique(flag, ["-fsanitize=thread"])
         ctx.env.append_unique("LINKFLAGS", ["-fsanitize=thread"])
 
+    ctx.env.ENV_VALID = True
+
+    """
+    For debug build
+    """
+    base_env = ctx.env
+    ctx.setenv("%s-debug" % env_name, base_env)
+
+    for flag in ("CFLAGS", "CXXFLAGS"):
+        ctx.env.append_unique(flag, ["-g", "-O0"])
+
     """
     For release build
     """
@@ -82,18 +46,64 @@ def configure_Linux_x64_clang(ctx):
     for flag in ("CFLAGS", "CXXFLAGS"):
         ctx.env.append_unique(flag, ["-O2"])
 
-    ctx.env.ENV_VALID = True
-
+    # Restore
     ctx.variant = prev_variant
 
 
 @conf
-def configure_Windows_x64_Linux_clang(ctx):
+def configure_Linux_x64_clang(ctx, root):
     prev_variant = ctx.variant
 
-    env_name = "Windows-x64-Linux-clang"
+    env_name = "linux64-clang"
     Logs.info("Configuring %s" % env_name)
-    ctx.setenv(env_name, ctx.env)
+    ctx.setenv(env_name, root)
+
+    ctx.load("clang clangxx")
+    ctx.load("gccdeps", tooldir="submodules/external/waf/waflib/extras")
+
+    ctx.env.append_unique("CXXFLAGS", ["-std=c++17"])
+
+    if Options.options.enable_address_sanitizer_on_Linux:
+        for flag in ("CFLAGS", "CXXFLAGS"):
+            ctx.env.append_unique(flag, ["-fsanitize=address"])
+        ctx.env.append_unique("LINKFLAGS", ["-fsanitize=address"])
+    elif Options.options.enable_thread_sanitizer_on_Linux:
+        for flag in ("CFLAGS", "CXXFLAGS"):
+            ctx.env.append_unique(flag, ["-fsanitize=thread"])
+        ctx.env.append_unique("LINKFLAGS", ["-fsanitize=thread"])
+
+    ctx.env.ENV_VALID = True
+
+    """
+    For debug build
+    """
+    base_env = ctx.env
+    ctx.setenv("%s-debug" % env_name, base_env)
+
+    for flag in ("CFLAGS", "CXXFLAGS"):
+        ctx.env.append_unique(flag, ["-g", "-O0"])
+
+    """
+    For release build
+    """
+    ctx.setenv("%s-release" % env_name, base_env)
+
+    ctx.env.append_unique("DEFINES", ["NDEBUG"])
+
+    for flag in ("CFLAGS", "CXXFLAGS"):
+        ctx.env.append_unique(flag, ["-O2"])
+
+    # Restore
+    ctx.variant = prev_variant
+
+
+@conf
+def configure_Windows_x64_Linux_clang(ctx, root):
+    prev_variant = ctx.variant
+
+    env_name = "linux-2-win64-clang"
+    Logs.info("Configuring %s" % env_name)
+    ctx.setenv(env_name, root)
 
     ctx.load("clang clangxx")
     ctx.load("gccdeps", tooldir="submodules/external/waf/waflib/extras")
@@ -141,6 +151,8 @@ def configure_Windows_x64_Linux_clang(ctx):
             "Warning: Could not locate 64-bit MinGW GCC C++ headers under /usr/lib/gcc/x86_64-w64-mingw32/"
         )
 
+    ctx.env.ENV_VALID = True
+
     """
     For debug build
     """
@@ -161,6 +173,5 @@ def configure_Windows_x64_Linux_clang(ctx):
     for flag in ("CFLAGS", "CXXFLAGS"):
         ctx.env.append_unique(flag, ["-O2"])
 
-    ctx.env.ENV_VALID = True
-
+    # Restore
     ctx.variant = prev_variant

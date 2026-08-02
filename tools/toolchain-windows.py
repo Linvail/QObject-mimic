@@ -38,6 +38,8 @@ def configure_win_msvc_common(ctx, env_name):
 
     ctx.env.MSVC_BIN_DIR = os.path.dirname(ctx.env.CC[0])
 
+    ctx.env.ENV_VALID = True
+
     """
     For debug build
     """
@@ -49,7 +51,7 @@ def configure_win_msvc_common(ctx, env_name):
         ctx.env.append_value(flag, ["/MDd", "/Zi", "/Ob0", "/Od", "/RTC1"])
         ctx.env.append_value(flag, ["/FS"])
 
-    ctx.env.append_value("LINKFLAGS", ["/DEBUG:FASTLINK"])
+    ctx.env.append_value("LINKFLAGS", ["/DEBUG"])
 
     """
     For release build (with optimizations + debug symbols enabled)
@@ -68,15 +70,14 @@ def configure_win_msvc_common(ctx, env_name):
     # Enable linker optimizations along with debug symbols generation.
     ctx.env.append_value("LINKFLAGS", ["/DEBUG", "/OPT:REF", "/OPT:ICF"])
 
-    ctx.env.ENV_VALID = True
-
 
 @conf
-def configure_win64_msvc(ctx):
+def configure_win64_msvc(ctx, root):
     prev_variant = ctx.variant
 
-    env_name = "Windows-x64-Windows-msvc"
-    ctx.setenv(env_name, ctx.env)
+    env_name = "win64-msvc"
+    Logs.info("*** Configuring %s" % env_name)
+    ctx.setenv(env_name, root)
 
     ctx.env.MSVC_TARGETS = ["x64"]
     ctx.configure_win_msvc_common(env_name)
@@ -85,11 +86,12 @@ def configure_win64_msvc(ctx):
 
 
 @conf
-def configure_win32_msvc(ctx):
+def configure_win32_msvc(ctx, root):
     prev_variant = ctx.variant
 
-    env_name = "Windows-x86-Windows-msvc"
-    ctx.setenv(env_name, ctx.env)
+    env_name = "win32-msvc"
+    Logs.info("*** Configuring %s" % env_name)
+    ctx.setenv(env_name, root)
 
     # Use x64 host compiler to compile x86 target.
     ctx.env.MSVC_TARGETS = ["amd64_x86"]
