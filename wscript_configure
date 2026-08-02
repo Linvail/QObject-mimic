@@ -2,6 +2,7 @@ from waflib import Configure, Context, Errors, Options, Utils, Logs
 from waflib.Configure import conf
 import glob, os
 
+
 ##
 # @brief Checks if the Boost headers are present and bootstraps them if they are missing.
 #
@@ -9,39 +10,56 @@ import glob, os
 #
 def check_and_bootstrap_boost(ctx):
     import sys, subprocess
-    boost_dir = os.path.join(ctx.path.abspath(), 'submodules', 'external', 'boost')
-    boost_headers_dir = os.path.join(boost_dir, 'boost')
-    core_check_file = os.path.join(boost_headers_dir, 'core', 'checked_delete.hpp')
+
+    boost_dir = os.path.join(ctx.path.abspath(), "submodules", "external", "boost")
+    boost_headers_dir = os.path.join(boost_dir, "boost")
+    core_check_file = os.path.join(boost_headers_dir, "core", "checked_delete.hpp")
     if not os.path.exists(boost_headers_dir) or not os.path.exists(core_check_file):
-        Logs.info("Boost headers directory not found. Bootstrapping Boost and generating headers...")
+        Logs.info(
+            "Boost headers directory not found. Bootstrapping Boost and generating headers..."
+        )
         if not os.path.exists(boost_dir) or not os.listdir(boost_dir):
-            Logs.error("Boost submodule is not initialized. Please run: git submodule update --init --recursive")
+            Logs.error(
+                "Boost submodule is not initialized. Please run: git submodule update --init --recursive"
+            )
             sys.exit(1)
-        is_windows = sys.platform.startswith('win')
+        is_windows = sys.platform.startswith("win")
         try:
             if is_windows:
-                bootstrap_cmd = 'bootstrap.bat'
-                b2_exe = os.path.join(boost_dir, 'b2.exe')
+                bootstrap_cmd = "bootstrap.bat"
+                b2_exe = os.path.join(boost_dir, "b2.exe")
                 Logs.info("Running bootstrap.bat...")
-                res = subprocess.run([bootstrap_cmd], cwd=boost_dir, shell=True, capture_output=True, text=True)
+                res = subprocess.run(
+                    [bootstrap_cmd],
+                    cwd=boost_dir,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                )
                 if res.returncode != 0:
                     Logs.error("Boost bootstrap failed:\n%s" % res.stderr)
                     sys.exit(res.returncode)
                 Logs.info("Running b2 headers...")
-                res = subprocess.run([b2_exe, 'headers'], cwd=boost_dir, capture_output=True, text=True)
+                res = subprocess.run(
+                    [b2_exe, "headers"], cwd=boost_dir, capture_output=True, text=True
+                )
                 if res.returncode != 0:
                     Logs.error("Boost b2 headers generation failed:\n%s" % res.stderr)
                     sys.exit(res.returncode)
             else:
-                bootstrap_cmd = './bootstrap.sh'
-                b2_exe = './b2'
+                bootstrap_cmd = "./bootstrap.sh"
+                b2_exe = "./b2"
                 Logs.info("Running bootstrap.sh...")
-                res = subprocess.run([bootstrap_cmd], cwd=boost_dir, capture_output=True, text=True)
+                res = subprocess.run(
+                    [bootstrap_cmd], cwd=boost_dir, capture_output=True, text=True
+                )
                 if res.returncode != 0:
                     Logs.error("Boost bootstrap failed:\n%s" % res.stderr)
                     sys.exit(res.returncode)
                 Logs.info("Running b2 headers...")
-                res = subprocess.run([b2_exe, 'headers'], cwd=boost_dir, capture_output=True, text=True)
+                res = subprocess.run(
+                    [b2_exe, "headers"], cwd=boost_dir, capture_output=True, text=True
+                )
                 if res.returncode != 0:
                     Logs.error("Boost b2 headers generation failed:\n%s" % res.stderr)
                     sys.exit(res.returncode)
@@ -49,6 +67,7 @@ def check_and_bootstrap_boost(ctx):
         except Exception as e:
             Logs.error("Failed to automatically generate Boost headers: %s" % e)
             sys.exit(1)
+
 
 check_and_bootstrap_boost(ctx)
 
@@ -58,15 +77,13 @@ local_tools = [
     "debug-info",
 ]
 
-ctx.load(local_tools, tooldir='tools')
-ctx.load('clang_compilation_database', tooldir='submodules/external/waf/waflib/extras')
+ctx.load(local_tools, tooldir="tools")
+ctx.load("clang_compilation_database", tooldir="submodules/external/waf/waflib/extras")
 
-
-ctx.env.PREFIX = "./usr"
 
 # Track all tools files for Waf's autoconfig Node hashing
-if os.path.exists('tools'):
-    for f in glob.glob('tools/**/*.py', recursive=True):
+if os.path.exists("tools"):
+    for f in glob.glob("tools/**/*.py", recursive=True):
         abspath = os.path.abspath(f)
         ctx.files.append(abspath)
-        ctx.hash = Utils.h_list((ctx.hash, Utils.readf(abspath, 'rb')))
+        ctx.hash = Utils.h_list((ctx.hash, Utils.readf(abspath, "rb")))

@@ -36,6 +36,14 @@ def setup_build_env(bld):
 
 def build_tests(bld):
     setup_build_env(bld)
+
+    if (
+        platform.system() == "Windows"
+        and bld.env.DEST_OS == "win32"
+        and not Options.options.disable_asan_on_win
+    ):
+        bld.add_AddressSanitizer_on_Windows()
+
     bld.recurse("submodules/external")
     bld.recurse("technology")
     bld.recurse("tests")
@@ -51,5 +59,7 @@ if not Options.options.destdir:
     Options.options.destdir = os.path.join("install", bld.variant)
     Logs.info("destdir is not specified, use default: %s" % Options.options.destdir)
 if not os.path.isabs(Options.options.destdir):
-    Options.options.destdir = os.path.join(bld.top_dir, Options.options.destdir)
+    Options.options.destdir = os.path.normpath(
+        os.path.join(bld.top_dir, Options.options.destdir)
+    )
     Logs.info("Installation directory: %s" % Options.options.destdir)
