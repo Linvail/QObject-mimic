@@ -48,11 +48,10 @@ PointerAlignment: Left
 ReferenceAlignment: Left
 
 # Namespaces
-NamespaceIndentation: None
+NamespaceIndentation: Inner
 
 # Includes
-SortIncludes: true
-IncludeBlocks: Regroup
+SortIncludes: false
 
 # Modern C++
 Cpp11BracedListStyle: true
