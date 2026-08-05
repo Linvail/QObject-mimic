@@ -13,6 +13,8 @@ I suppose that we at least need to mimic QObject, QThread.
 
 4. Support QObject::startTimer(), killTimer(), timerEvent(), a part of features of QTimer.
 
+4.5 Support setter/getter of stack size and priority of Thread.
+
 5. Support QAbstractEventDispatcher, and concrete dispatcher for Windows and Linux. I want to receive OS/platform's messages.
 100% cpu-spin is not allowed.
 
