@@ -44,14 +44,20 @@ public:
      * @brief Requests the thread's event loop to exit with specified return code. Thread-safe.
      * @param returnCode Exit return code.
      */
-    void exit(int returnCode = 0);
+    void exit
+        (
+        int returnCode = 0
+        );
 
     /**
      * @brief Blocks until the thread has finished executing or timeout expires. Thread-safe.
      * @param time Maximum time to wait in milliseconds.
      * @return True if thread finished, false if timeout occurred.
      */
-    bool wait(unsigned long time = ULONG_MAX);
+    bool wait
+        (
+        unsigned long time = ULONG_MAX
+        );
 
     /**
      * @brief Checks if the thread is currently running. Thread-safe.
@@ -99,7 +105,10 @@ public:
      * start()/exec(), or after it has fully finished and released it), in which case the task is
      * dropped rather than run.
      */
-    bool post(std::function<void()> task);
+    bool post
+        (
+        std::function<void()> task
+        );
 
     /**
      * @brief Signal emitted when the thread starts running.
@@ -119,8 +128,8 @@ public:
      * @param args Arguments to pass.
      * @return Pointer to the newly created GThread. Thread-safe.
      */
-    template <typename Function, typename... Args>
-    static GThread* create(Function&& f, Args&&... args);
+    template <typename Function, typename ... Args>
+    static GThread* create( Function&& f, Args&&... args );
 
 protected:
     /**
@@ -149,10 +158,10 @@ private:
 
     std::unique_ptr<std::thread> m_thread;
     std::shared_ptr<GThreadData> m_data;
-    std::atomic<bool> m_running{false};
-    std::atomic<bool> m_finished{false};
-    std::atomic<bool> m_exiting{false};
-    std::atomic<int> m_exitCode{0};
+    std::atomic<bool> m_running { false };
+    std::atomic<bool> m_finished { false };
+    std::atomic<bool> m_exiting { false };
+    std::atomic<int> m_exitCode { 0 };
     mutable std::mutex m_waitMutex;
     std::condition_variable m_waitCv;
 
@@ -162,23 +171,30 @@ private:
     friend class GObject;
 };
 
-template <typename Function, typename... Args>
-GThread* GThread::create(Function&& f, Args&&... args)
+template <typename Function, typename ... Args>
+GThread* GThread::create
+    (
+    Function&& f,
+    Args&&... args
+    )
 {
-    auto task = std::bind(std::forward<Function>(f), std::forward<Args>(args)...);
+    auto task = std::bind( std::forward<Function>( f ), std::forward<Args>( args )... );
 
     class GFuncThread : public GThread
     {
     public:
-        GFuncThread(std::function<void()> fn)
-            : m_fn(std::move(fn))
+        GFuncThread
+            (
+            std::function<void()> fn
+            )
+            : m_fn( std::move( fn ) )
         {
         }
 
     protected:
         virtual void run() override
         {
-            if (m_fn)
+            if( m_fn )
             {
                 m_fn();
             }
@@ -188,7 +204,7 @@ GThread* GThread::create(Function&& f, Args&&... args)
         std::function<void()> m_fn;
     };
 
-    auto* threadObj = new GFuncThread(task);
+    auto* threadObj = new GFuncThread( task );
     threadObj->start();
     return threadObj;
 }

@@ -21,6 +21,7 @@ public:
      * @brief Destroys the GEventDispatcherWin32 instance.
      */
     virtual ~GEventDispatcherWin32() override;
+
 };
 
 #endif // GEVENTDISPATCHERWIN32_H

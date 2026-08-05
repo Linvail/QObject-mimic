@@ -29,7 +29,6 @@ public:
         /** @brief The interval the timer was registered with, in milliseconds. */
         int intervalMs;
     };
-
     /**
      * @brief Constructs an event dispatcher.
      */
@@ -85,7 +84,6 @@ protected:
     // ~GObject()), which reach them through the friend declaration at the end of this class.
     // processEvents()/wakeUp()/interrupt() stay public: they drive or stop the loop as a whole
     // and cannot be aimed at a particular object.
-
     /**
      * @brief Registers a timer for the given object.
      * @param timerId Unique timer identifier.
@@ -94,7 +92,12 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void registerTimer(int timerId, int interval, GObject* object) = 0;
+    virtual void registerTimer
+        (
+        int timerId,
+        int interval,
+        GObject* object
+        ) = 0;
 
     /**
      * @brief Unregisters a timer by ID.
@@ -103,7 +106,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual bool unregisterTimer(int timerId) = 0;
+    virtual bool unregisterTimer
+        (
+        int timerId
+        ) = 0;
 
     /**
      * @brief Thread-safely posts an event to the dispatcher's queue.
@@ -112,7 +118,11 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void postEvent(GObject* receiver, GEvent* event) = 0;
+    virtual void postEvent
+        (
+        GObject* receiver,
+        GEvent* event
+        ) = 0;
 
     /**
      * @brief Removes and deletes all pending events for the specified receiver.
@@ -120,7 +130,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void removeEventsForReceiver(GObject* receiver) = 0;
+    virtual void removeEventsForReceiver
+        (
+        GObject* receiver
+        ) = 0;
 
     /**
      * @brief Unregisters the receiver's timers and returns them so they can be re-registered.
@@ -134,7 +147,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual std::vector<TimerRegistration> takeTimersForReceiver(GObject* receiver) = 0;
+    virtual std::vector<TimerRegistration> takeTimersForReceiver
+        (
+        GObject* receiver
+        ) = 0;
 
     friend class GObject;
 };

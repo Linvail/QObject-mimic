@@ -21,6 +21,7 @@ public:
      * @brief Destroys the GEventDispatcherLinux instance.
      */
     virtual ~GEventDispatcherLinux() override;
+
 };
 
 #endif // GEVENTDISPATCHERLINUX_H

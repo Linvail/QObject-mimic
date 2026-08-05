@@ -24,7 +24,6 @@ public:
         Timer          = 2,
         DeferredDelete = 3
     };
-
     /**
      * @brief Virtual destructor.
      */
@@ -34,7 +33,10 @@ public:
      * @brief Gets the type of the event.
      * @return The event type. Thread-safe.
      */
-    Type type() const { return m_type; }
+    Type type() const
+    {
+        return m_type;
+    }
 
 protected:
     /**
@@ -43,8 +45,11 @@ protected:
      * Protected: GEvent is only ever instantiated through one of the concrete subclasses below.
      * @param type The type of the event.
      */
-    GEvent(Type type)
-    : m_type(type)
+    GEvent
+        (
+        Type type
+        )
+        : m_type( type )
     {
     }
 
@@ -65,9 +70,12 @@ private:
      * @brief Constructs a metacall event with the given callback.
      * @param callback The function to execute.
      */
-    GMetaCallEvent(std::function<void()> callback)
-    : GEvent(MetaCall)
-    , m_callback(std::move(callback))
+    GMetaCallEvent
+        (
+        std::function<void()> callback
+        )
+        : GEvent( MetaCall )
+        , m_callback( std::move( callback ) )
     {
     }
 
@@ -76,7 +84,7 @@ private:
      */
     void placeMetaCall() const
     {
-        if (m_callback)
+        if( m_callback )
         {
             m_callback();
         }
@@ -101,9 +109,12 @@ public:
      * Constructing one grants no privileged capability -- it cannot be posted to any queue.
      * @param timerId The unique identifier of the expired timer.
      */
-    GTimerEvent(int timerId)
-    : GEvent(Timer)
-    , m_timerId(timerId)
+    GTimerEvent
+        (
+        int timerId
+        )
+        : GEvent( Timer )
+        , m_timerId( timerId )
     {
     }
 
@@ -111,7 +122,10 @@ public:
      * @brief Gets the timer ID associated with this event.
      * @return The timer ID. Thread-safe.
      */
-    int timerId() const { return m_timerId; }
+    int timerId() const
+    {
+        return m_timerId;
+    }
 
 private:
     int m_timerId;
@@ -130,7 +144,7 @@ private:
      * @brief Constructs a deferred delete event.
      */
     GDeferredDeleteEvent()
-    : GEvent(DeferredDelete)
+        : GEvent( DeferredDelete )
     {
     }
 

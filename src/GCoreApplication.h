@@ -20,7 +20,11 @@ public:
      * @param argc Argument count.
      * @param argv Argument vector.
      */
-    GCoreApplication(int& argc, char** argv);
+    GCoreApplication
+        (
+        int& argc,
+        char** argv
+        );
 
     /**
      * @brief Destroys the application object.
@@ -51,7 +55,7 @@ private:
     // shared_ptr rather than unique_ptr: GThreadData hands out strong references, so a dispatcher
     // cannot be destroyed while another thread is part-way through a call into it.
     std::shared_ptr<GAbstractEventDispatcher> m_dispatcher;
-    std::atomic<bool>                         m_exiting{ false };
+    std::atomic<bool>                         m_exiting { false };
 };
 
 #endif // GCOREAPPLICATION_H

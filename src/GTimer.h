@@ -36,7 +36,10 @@ public:
      * @brief Sets the timer interval in milliseconds.
      * @param msec Interval in milliseconds.
      */
-    void setInterval(int msec);
+    void setInterval
+        (
+        int msec
+        );
 
     /**
      * @brief Checks if the timer is currently active (running).
@@ -54,7 +57,10 @@ public:
      * @brief Sets whether the timer is single-shot.
      * @param singleShot True for single-shot, false for periodic.
      */
-    void setSingleShot(bool singleShot);
+    void setSingleShot
+        (
+        bool singleShot
+        );
 
     /**
      * @brief Gets the unique ID of the internal timer.
@@ -72,7 +78,10 @@ public:
      * `GObject::callLater(&timer, &GTimer::start, 50)`.
      * @param msec Interval in milliseconds.
      */
-    void start(int msec);
+    void start
+        (
+        int msec
+        );
 
     /**
      * @brief Starts or restarts the timer using the existing interval.
@@ -93,14 +102,17 @@ public:
      * @brief Signal emitted when the timer expires.
      */
     GSignal<> timeout;
-
     /**
      * @brief Fires a single-shot timer executing a functor after specified delay.
      * @tparam Functor Callable slot type.
      * @param msec Delay in milliseconds.
      * @param functor Slot function to execute.
      */
-    template <typename Functor> static void singleShot(int msec, Functor functor);
+    template <typename Functor> static void singleShot
+        (
+        int msec,
+        Functor functor
+        );
 
     /**
      * @brief Fires a single-shot timer executing a functor in context object's thread.
@@ -110,7 +122,12 @@ public:
      * @param functor Slot function to execute.
      */
     template <typename Functor>
-    static void singleShot(int msec, const GObject* context, Functor functor);
+    static void singleShot
+        (
+        int msec,
+        const GObject* context,
+        Functor functor
+        );
 
     /**
      * @brief Fires a single-shot timer executing a member function on receiver object.
@@ -121,14 +138,22 @@ public:
      * @param method Member function pointer to execute.
      */
     template <typename Receiver, typename MemberFunc>
-    static void singleShot(int msec, const Receiver* receiver, MemberFunc method);
+    static void singleShot
+        (
+        int msec,
+        const Receiver* receiver,
+        MemberFunc method
+        );
 
 protected:
     /**
      * @brief Internal timer event handler.
      * @param event Timer event.
      */
-    virtual void timerEvent(GTimerEvent* event) override;
+    virtual void timerEvent
+        (
+        GTimerEvent* event
+        ) override;
 
 private:
     // Deliberately unsynchronised, matching QTimer, which has no locking of any kind. Every
@@ -136,27 +161,38 @@ private:
     // thread-confined because they go through GObject::startTimer()/killTimer(), and timerEvent()
     // is delivered by that same thread's event loop. Adding a mutex would only paper over misuse
     // that the thread-confinement rules already forbid.
-    int m_interval{0};
-    int m_timerId{-1};
-    bool m_singleShot{false};
-    bool m_active{false};
+    int m_interval { 0 };
+    int m_timerId { -1 };
+    bool m_singleShot { false };
+    bool m_active { false };
 };
 
-template <typename Functor> void GTimer::singleShot(int msec, Functor functor)
+template <typename Functor> void GTimer::singleShot
+    (
+    int msec,
+    Functor functor
+    )
 {
     class GSingleShotHelper : public GObject
     {
     public:
-        GSingleShotHelper(int ms, Functor fn)
-            : m_fn(std::move(fn))
+        GSingleShotHelper
+            (
+            int ms,
+            Functor fn
+            )
+            : m_fn( std::move( fn ) )
         {
-            m_id = startTimer(ms);
+            m_id = startTimer( ms );
         }
 
     protected:
-        virtual void timerEvent(GTimerEvent* event) override
+        virtual void timerEvent
+            (
+            GTimerEvent* event
+            ) override
         {
-            if (event->timerId() == m_id)
+            if( event->timerId() == m_id )
             {
                 m_fn();
                 deleteLater();
@@ -171,28 +207,37 @@ template <typename Functor> void GTimer::singleShot(int msec, Functor functor)
 
     private:
         Functor m_fn;
-        int m_id{-1};
+        int m_id { -1 };
     };
-    auto* helper = new GSingleShotHelper(msec, functor);
-    if (helper->timerId() == -1)
+    auto* helper = new GSingleShotHelper( msec, functor );
+    if( helper->timerId() == -1 )
     {
         delete helper;
     }
 }
 
 template <typename Functor>
-void GTimer::singleShot(int msec, const GObject* context, Functor functor)
+void GTimer::singleShot
+    (
+    int msec,
+    const GObject* context,
+    Functor functor
+    )
 {
-    if (!context)
+    if( !context )
     {
         return;
     }
     class GSingleShotContextHelper : public GObject
     {
     public:
-        GSingleShotContextHelper(int ms, Functor fn)
-            : m_fn(std::move(fn))
-            , m_interval(ms)
+        GSingleShotContextHelper
+            (
+            int ms,
+            Functor fn
+            )
+            : m_fn( std::move( fn ) )
+            , m_interval( ms )
         {
         }
 
@@ -203,8 +248,8 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
          */
         void arm()
         {
-            m_id = startTimer(m_interval);
-            if (m_id == -1)
+            m_id = startTimer( m_interval );
+            if( m_id == -1 )
             {
                 // Nothing will ever fire, so reclaim the helper rather than leaking it.
                 delete this;
@@ -212,9 +257,12 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
         }
 
     protected:
-        virtual void timerEvent(GTimerEvent* event) override
+        virtual void timerEvent
+            (
+            GTimerEvent* event
+            ) override
         {
-            if (event->timerId() == m_id)
+            if( event->timerId() == m_id )
             {
                 m_fn();
                 deleteLater();
@@ -223,12 +271,12 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
 
     private:
         Functor m_fn;
-        int m_interval{0};
-        int m_id{-1};
+        int m_interval { 0 };
+        int m_id { -1 };
     };
 
-    auto*    helper = new GSingleShotContextHelper(msec, functor);
-    GObject* ctx    = const_cast<GObject*>(context);
+    auto*    helper = new GSingleShotContextHelper( msec, functor );
+    GObject* ctx    = const_cast<GObject*>( context );
 
     // startTimer() is thread-confined, so the timer has to be registered on the thread that will
     // deliver its events -- not on whichever thread happens to call singleShot(). This mirrors
@@ -237,26 +285,34 @@ void GTimer::singleShot(int msec, const GObject* context, Functor functor)
     // to start the timer there.
     //
     // The helper was constructed here, so its thread() is this thread.
-    if (helper->thread() == ctx->thread())
+    if( helper->thread() == ctx->thread() )
     {
         helper->arm(); // may delete itself; do not touch `helper` afterwards
     }
     else
     {
-        helper->moveToThread(ctx->thread());
-        GObject::callLater(helper, &GSingleShotContextHelper::arm);
+        helper->moveToThread( ctx->thread() );
+        GObject::callLater( helper, &GSingleShotContextHelper::arm );
     }
 }
 
 template <typename Receiver, typename MemberFunc>
-void GTimer::singleShot(int msec, const Receiver* receiver, MemberFunc method)
+void GTimer::singleShot
+    (
+    int msec,
+    const Receiver* receiver,
+    MemberFunc method
+    )
 {
-    if (!receiver)
+    if( !receiver )
     {
         return;
     }
-    auto bound = [receiver, method]() { (const_cast<Receiver*>(receiver)->*method)(); };
-    singleShot(msec, static_cast<const GObject*>(receiver), bound);
+    auto bound = [receiver, method]()
+        {
+            ( const_cast<Receiver*>( receiver )->*method )();
+        };
+    singleShot( msec, static_cast<const GObject*>( receiver ), bound );
 }
 
 #endif // GTIMER_H

@@ -16,7 +16,7 @@ class CustomTestThread : public GThread
 protected:
     virtual void run() override
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
         m_executed = true;
     }
 
@@ -25,10 +25,13 @@ public:
      * @brief Checks if run() executed.
      * @return True if run() completed.
      */
-    bool wasExecuted() const { return m_executed; }
+    bool wasExecuted() const
+    {
+        return m_executed;
+    }
 
 private:
-    bool m_executed{ false };
+    bool m_executed { false };
 };
 
 /**
@@ -37,17 +40,23 @@ private:
 class ThreadPointerCheckThread : public GThread
 {
 protected:
-    virtual void run() override { m_selfPointer = GThread::currentThread(); }
+    virtual void run() override
+    {
+        m_selfPointer = GThread::currentThread();
+    }
 
 public:
     /**
      * @brief Gets the captured currentThread pointer.
      * @return Captured thread pointer.
      */
-    GThread* selfPointer() const { return m_selfPointer; }
+    GThread* selfPointer() const
+    {
+        return m_selfPointer;
+    }
 
 private:
-    GThread* m_selfPointer{ nullptr };
+    GThread* m_selfPointer { nullptr };
 };
 
 /**
@@ -56,7 +65,11 @@ private:
 class ExitCodeTestThread : public GThread
 {
 protected:
-    virtual void run() override { exit(123); }
+    virtual void run() override
+    {
+        exit( 123 );
+    }
+
 };
 
 /**
@@ -65,7 +78,11 @@ protected:
 class SlowTestThread : public GThread
 {
 protected:
-    virtual void run() override { std::this_thread::sleep_for(std::chrono::milliseconds(300)); }
+    virtual void run() override
+    {
+        std::this_thread::sleep_for( std::chrono::milliseconds( 300 ) );
+    }
+
 };
 
 /**
@@ -74,30 +91,36 @@ protected:
  * Verifies GThread::start(), GThread::wait(), GThread::isRunning(), GThread::isFinished(),
  * and emission of GThread::started and GThread::finished signals.
  */
-TEST(GThreadTest, LifecycleAndSignals)
+TEST( GThreadTest, LifecycleAndSignals )
 {
     CustomTestThread thread;
-    bool             startedFired  = false;
-    bool             finishedFired = false;
+    bool startedFired  = false;
+    bool finishedFired = false;
 
     GObject context;
     GObject::connect(
-        thread.started, &context, [&startedFired]() { startedFired = true; }, G::DirectConnection);
+        thread.started, &context, [&startedFired]()
+        {
+            startedFired = true;
+        }, G::DirectConnection );
 
     GObject::connect(
         thread.finished,
         &context,
-        [&finishedFired]() { finishedFired = true; },
-        G::DirectConnection);
+        [&finishedFired]()
+        {
+            finishedFired = true;
+        },
+        G::DirectConnection );
 
     thread.start();
     thread.wait();
 
-    EXPECT_TRUE(thread.isFinished());
-    EXPECT_FALSE(thread.isRunning());
-    EXPECT_TRUE(thread.wasExecuted());
-    EXPECT_TRUE(startedFired);
-    EXPECT_TRUE(finishedFired);
+    EXPECT_TRUE( thread.isFinished() );
+    EXPECT_FALSE( thread.isRunning() );
+    EXPECT_TRUE( thread.wasExecuted() );
+    EXPECT_TRUE( startedFired );
+    EXPECT_TRUE( finishedFired );
 }
 
 /**
@@ -106,13 +129,16 @@ TEST(GThreadTest, LifecycleAndSignals)
  * Verifies static function GThread::create() instantiates, starts, and executes a functor on a new
  * thread.
  */
-TEST(GThreadTest, CreateStaticFactory)
+TEST( GThreadTest, CreateStaticFactory )
 {
-    bool     funcExecuted = false;
-    GThread* threadObj    = GThread::create([&funcExecuted]() { funcExecuted = true; });
+    bool funcExecuted = false;
+    GThread* threadObj    = GThread::create( [&funcExecuted]()
+        {
+            funcExecuted = true;
+        } );
 
     threadObj->wait();
-    EXPECT_TRUE(funcExecuted);
+    EXPECT_TRUE( funcExecuted );
     delete threadObj;
 }
 
@@ -122,13 +148,13 @@ TEST(GThreadTest, CreateStaticFactory)
  * Verifies static function GThread::currentThread() returns the pointer to the active GThread
  * instance inside its execution context.
  */
-TEST(GThreadTest, CurrentThreadPointer)
+TEST( GThreadTest, CurrentThreadPointer )
 {
     ThreadPointerCheckThread thread;
     thread.start();
     thread.wait();
 
-    EXPECT_EQ(thread.selfPointer(), &thread);
+    EXPECT_EQ( thread.selfPointer(), &thread );
 }
 
 /**
@@ -136,12 +162,12 @@ TEST(GThreadTest, CurrentThreadPointer)
  *
  * Verifies GThread::exit() requests thread termination and transitions GThread to finished state.
  */
-TEST(GThreadTest, ThreadExitAndReturnCode)
+TEST( GThreadTest, ThreadExitAndReturnCode )
 {
     ExitCodeTestThread thread;
     thread.start();
     thread.wait();
-    EXPECT_TRUE(thread.isFinished());
+    EXPECT_TRUE( thread.isFinished() );
 }
 
 /**
@@ -150,18 +176,18 @@ TEST(GThreadTest, ThreadExitAndReturnCode)
  * Verifies GThread::wait(ms) returns false when thread execution exceeds timeout, and true once
  * finished.
  */
-TEST(GThreadTest, WaitTimeout)
+TEST( GThreadTest, WaitTimeout )
 {
     SlowTestThread thread;
     thread.start();
 
-    bool finishedInShortTime = thread.wait(20);
-    EXPECT_FALSE(finishedInShortTime);
-    EXPECT_TRUE(thread.isRunning());
+    bool finishedInShortTime = thread.wait( 20 );
+    EXPECT_FALSE( finishedInShortTime );
+    EXPECT_TRUE( thread.isRunning() );
 
-    bool finishedEventually = thread.wait(1000);
-    EXPECT_TRUE(finishedEventually);
-    EXPECT_TRUE(thread.isFinished());
+    bool finishedEventually = thread.wait( 1000 );
+    EXPECT_TRUE( finishedEventually );
+    EXPECT_TRUE( thread.isFinished() );
 }
 
 /**
@@ -170,30 +196,30 @@ TEST(GThreadTest, WaitTimeout)
  * Verifies launching multiple GThread instances in parallel, joining each via GThread::wait(), and
  * ensuring thread safety.
  */
-TEST(GThreadTest, MultipleThreadsExecution)
+TEST( GThreadTest, MultipleThreadsExecution )
 {
-    constexpr int         count = 5;
-    std::atomic<int>      completedCount{ 0 };
+    constexpr int count = 5;
+    std::atomic<int>      completedCount { 0 };
     std::vector<GThread*> threads;
 
-    for (int i = 0; i < count; ++i)
+    for( int i = 0; i < count; ++i )
     {
         GThread* t = GThread::create(
             [&completedCount]()
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                completedCount.fetch_add(1);
-            });
-        threads.push_back(t);
+                std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
+                completedCount.fetch_add( 1 );
+            } );
+        threads.push_back( t );
     }
 
-    for (auto* t : threads)
+    for( auto* t : threads )
     {
         t->wait();
         delete t;
     }
 
-    EXPECT_EQ(completedCount.load(), count);
+    EXPECT_EQ( completedCount.load(), count );
 }
 
 /**
@@ -206,31 +232,32 @@ TEST(GThreadTest, MultipleThreadsExecution)
  * start(), one owned while running, and cleaned up on exit (the last part relies on
  * AddressSanitizer/LeakSanitizer in the debug build to catch a leak or double free).
  */
-TEST(GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle)
+TEST( GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle )
 {
     GThread thread;
-    EXPECT_EQ(thread.eventDispatcher(), nullptr) << "no dispatcher should exist before start()";
+    EXPECT_EQ( thread.eventDispatcher(), nullptr ) << "no dispatcher should exist before start()";
 
     thread.start();
-    while (!thread.eventDispatcher())
+    while( !thread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
-    EXPECT_NE(thread.eventDispatcher(), nullptr) << "start() should create the thread's dispatcher";
+    EXPECT_NE( thread.eventDispatcher(), nullptr ) <<
+        "start() should create the thread's dispatcher";
 
     thread.quit();
     thread.wait();
-    EXPECT_TRUE(thread.isFinished());
+    EXPECT_TRUE( thread.isFinished() );
 }
 
 /**
  * @brief Tests GThread::post() runs the task on the target thread, from another thread.
  */
-TEST(GThreadTest, PostRunsTaskOnTargetThread)
+TEST( GThreadTest, PostRunsTaskOnTargetThread )
 {
     GThread worker;
     worker.start();
-    while (!worker.eventDispatcher())
+    while( !worker.eventDispatcher() )
     {
         std::this_thread::yield();
     }
@@ -238,12 +265,14 @@ TEST(GThreadTest, PostRunsTaskOnTargetThread)
     std::promise<GThread*> ranOnPromise;
     auto ranOnFuture = ranOnPromise.get_future();
 
-    EXPECT_TRUE(worker.post([&ranOnPromise]()
-                            { ranOnPromise.set_value(GThread::currentThread()); }));
+    EXPECT_TRUE( worker.post( [&ranOnPromise]()
+        {
+            ranOnPromise.set_value( GThread::currentThread() );
+        } ) );
 
-    ASSERT_EQ(ranOnFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+    ASSERT_EQ( ranOnFuture.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready )
         << "posted task never ran.";
-    EXPECT_EQ(ranOnFuture.get(), &worker);
+    EXPECT_EQ( ranOnFuture.get(), &worker );
 
     worker.quit();
     worker.wait();
@@ -256,33 +285,36 @@ TEST(GThreadTest, PostRunsTaskOnTargetThread)
  * G::AutoConnection: Auto would resolve to a same-thread direct call and run the task inline,
  * before post() returns, instead of on a later loop iteration.
  */
-TEST(GThreadTest, PostFromOwnThreadStillDefers)
+TEST( GThreadTest, PostFromOwnThreadStillDefers )
 {
     GThread worker;
     worker.start();
-    while (!worker.eventDispatcher())
+    while( !worker.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
     std::promise<void> orderPromise;
     auto orderFuture = orderPromise.get_future();
-    std::atomic<bool> postReturnedBeforeTaskRan{false};
+    std::atomic<bool> postReturnedBeforeTaskRan { false };
 
     // Ask the worker to post a task to itself, and observe whether post() returns before or
     // after that inner task actually executes.
-    ASSERT_TRUE(worker.post(
+    ASSERT_TRUE( worker.post(
         [&worker, &orderPromise, &postReturnedBeforeTaskRan]()
         {
             bool innerRan = false;
-            worker.post([&innerRan]() { innerRan = true; });
+            worker.post( [&innerRan]()
+            {
+                innerRan = true;
+            } );
             // If post() deferred correctly, innerRan is still false immediately after the call.
-            postReturnedBeforeTaskRan.store(!innerRan);
+            postReturnedBeforeTaskRan.store( !innerRan );
             orderPromise.set_value();
-        }));
+        } ) );
 
-    ASSERT_EQ(orderFuture.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    EXPECT_TRUE(postReturnedBeforeTaskRan.load())
+    ASSERT_EQ( orderFuture.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready );
+    EXPECT_TRUE( postReturnedBeforeTaskRan.load() )
         << "post() ran the task inline instead of deferring it.";
 
     worker.quit();
@@ -292,28 +324,31 @@ TEST(GThreadTest, PostFromOwnThreadStillDefers)
 /**
  * @brief Tests GThread::post() reports failure and drops the task when there is no dispatcher.
  */
-TEST(GThreadTest, PostBeforeStartFails)
+TEST( GThreadTest, PostBeforeStartFails )
 {
     GThread thread;
     bool ran = false;
-    EXPECT_FALSE(thread.post([&ran]() { ran = true; }))
+    EXPECT_FALSE( thread.post( [&ran]()
+        {
+            ran = true;
+        } ) )
         << "post() should fail before start() -- there is no dispatcher yet.";
-    EXPECT_FALSE(ran);
+    EXPECT_FALSE( ran );
 }
 
 /**
  * @brief Tests GThread::post() rejects an empty std::function without touching the dispatcher.
  */
-TEST(GThreadTest, PostRejectsEmptyTask)
+TEST( GThreadTest, PostRejectsEmptyTask )
 {
     GThread worker;
     worker.start();
-    while (!worker.eventDispatcher())
+    while( !worker.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    EXPECT_FALSE(worker.post(std::function<void()>()));
+    EXPECT_FALSE( worker.post( std::function<void()>() ) );
 
     worker.quit();
     worker.wait();

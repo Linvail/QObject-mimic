@@ -1,9 +1,9 @@
 #include "GThread.h"
 
 #include "GEventDispatcherDefault.h"
-#if defined(_WIN32)
+#if defined( _WIN32 )
     #include "GEventDispatcherWin32.h"
-#elif defined(__linux__)
+#elif defined( __linux__ )
     #include "GEventDispatcherLinux.h"
 #endif
 
@@ -23,7 +23,7 @@ GThread::~GThread()
 
 void GThread::start()
 {
-    if (m_running.load())
+    if( m_running.load() )
     {
         return;
     }
@@ -31,31 +31,31 @@ void GThread::start()
     // If a previous run finished but the caller never called wait(), m_thread can still hold a
     // joinable std::thread. Overwriting m_thread below would destroy that std::thread while it
     // is still joinable, which calls std::terminate(). Join it first.
-    if (m_thread && m_thread->joinable())
+    if( m_thread && m_thread->joinable() )
     {
         m_thread->join();
     }
 
-    m_running.store(true);
-    m_finished.store(false);
-    m_exiting.store(false);
+    m_running.store( true );
+    m_finished.store( false );
+    m_exiting.store( false );
 
     m_thread = std::make_unique<std::thread>(
         [this]()
         {
             s_currentThread = this;
-            this->moveToThread(this);
+            this->moveToThread( this );
 
             bool createdDispatcher = false;
-            if (!m_data->dispatcher())
+            if( !m_data->dispatcher() )
             {
-#if defined(_WIN32)
-                m_data->setDispatcher(std::make_shared<GEventDispatcherWin32>());
-#elif defined(__linux__)
-                m_data->setDispatcher(std::make_shared<GEventDispatcherLinux>());
-#else
-                m_data->setDispatcher(std::make_shared<GEventDispatcherDefault>());
-#endif
+                #if defined( _WIN32 )
+                    m_data->setDispatcher( std::make_shared<GEventDispatcherWin32>() );
+                #elif defined( __linux__ )
+                    m_data->setDispatcher( std::make_shared<GEventDispatcherLinux>() );
+                #else
+                    m_data->setDispatcher( std::make_shared<GEventDispatcherDefault>() );
+                #endif
                 createdDispatcher = true;
             }
 
@@ -71,74 +71,83 @@ void GThread::start()
             // Without this, anything that called deleteLater() before the loop stopped is never
             // destroyed: the dispatcher's destructor can free the queued events but has no way
             // to free their receivers.
-            if (auto disp = m_data->dispatcher())
+            if( auto disp = m_data->dispatcher() )
             {
                 disp->processDeferredDeletes();
             }
 
-            if (createdDispatcher)
+            if( createdDispatcher )
             {
                 // Just drop this thread's reference. Any other thread that is part-way through a
                 // call still holds its own strong reference from GThreadData::dispatcher(), so
                 // the dispatcher stays alive until that call finishes rather than being freed
                 // underneath it.
-                m_data->setDispatcher(nullptr);
+                m_data->setDispatcher( nullptr );
             }
 
-            m_running.store(false);
-            m_finished.store(true);
+            m_running.store( false );
+            m_finished.store( true );
             {
-                std::lock_guard<std::mutex> lock(m_waitMutex);
+                std::lock_guard<std::mutex> lock( m_waitMutex );
                 m_waitCv.notify_all();
             }
             s_currentThread = nullptr;
-        });
+        } );
 }
 
 void GThread::quit()
 {
-    exit(0);
+    exit( 0 );
 }
 
-void GThread::exit(int returnCode)
+void GThread::exit
+    (
+    int returnCode
+    )
 {
-    m_exitCode.store(returnCode);
-    m_exiting.store(true);
+    m_exitCode.store( returnCode );
+    m_exiting.store( true );
     auto dispatcher = m_data->dispatcher();
-    if (dispatcher)
+    if( dispatcher )
     {
         dispatcher->interrupt();
         dispatcher->wakeUp();
     }
 }
 
-bool GThread::wait(unsigned long time)
+bool GThread::wait
+    (
+    unsigned long time
+    )
 {
-    if (m_finished.load())
+    if( m_finished.load() )
     {
-        if (m_thread && m_thread->joinable())
+        if( m_thread && m_thread->joinable() )
         {
             m_thread->join();
         }
         return true;
     }
 
-    if (!m_thread || !m_thread->joinable())
+    if( !m_thread || !m_thread->joinable() )
     {
         return true;
     }
 
-    if (time == ULONG_MAX)
+    if( time == ULONG_MAX )
     {
         m_thread->join();
         return true;
     }
     else
     {
-        std::unique_lock<std::mutex> lock(m_waitMutex);
+        std::unique_lock<std::mutex> lock( m_waitMutex );
         bool completed = m_waitCv.wait_for(
-            lock, std::chrono::milliseconds(time), [this] { return m_finished.load(); });
-        if (completed && m_thread->joinable())
+            lock, std::chrono::milliseconds( time ), [this]
+            {
+                return m_finished.load();
+            } );
+        if( completed && m_thread->joinable() )
         {
             m_thread->join();
         }
@@ -166,15 +175,18 @@ std::shared_ptr<GAbstractEventDispatcher> GThread::eventDispatcher() const
     return m_data->dispatcher();
 }
 
-bool GThread::post(std::function<void()> task)
+bool GThread::post
+    (
+    std::function<void()> task
+    )
 {
-    if (!task)
+    if( !task )
     {
         return false;
     }
     // Explicit QueuedConnection (not Auto): post() must always defer, even when called from this
     // thread itself -- Auto would resolve to a same-thread call and run inline instead.
-    return dispatchMetaCall(this, std::move(task), G::QueuedConnection);
+    return dispatchMetaCall( this, std::move( task ), G::QueuedConnection );
 }
 
 void GThread::run()
@@ -187,7 +199,7 @@ int GThread::exec()
     // Re-fetched each iteration, and held as a strong reference across processEvents() so the
     // dispatcher cannot be destroyed mid-call.
     auto dispatcher = m_data->dispatcher();
-    while (!m_exiting.load() && dispatcher)
+    while( !m_exiting.load() && dispatcher )
     {
         dispatcher->processEvents();
         dispatcher = m_data->dispatcher();

@@ -64,7 +64,6 @@ protected:
     // already governs every call made through the GAbstractEventDispatcher* that
     // GThread::eventDispatcher() hands out, so this is belt-and-suspenders -- it closes the
     // remaining gap for a caller holding a GEventDispatcherDefault* directly.
-
     /**
      * @brief Registers a timer for a target object.
      * @param timerId Unique timer identifier.
@@ -73,7 +72,12 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void registerTimer(int timerId, int interval, GObject* object) override;
+    virtual void registerTimer
+        (
+        int timerId,
+        int interval,
+        GObject* object
+        ) override;
 
     /**
      * @brief Unregisters a timer by ID.
@@ -82,7 +86,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual bool unregisterTimer(int timerId) override;
+    virtual bool unregisterTimer
+        (
+        int timerId
+        ) override;
 
     /**
      * @brief Thread-safely posts an event to the dispatcher's queue.
@@ -91,7 +98,11 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void postEvent(GObject* receiver, GEvent* event) override;
+    virtual void postEvent
+        (
+        GObject* receiver,
+        GEvent* event
+        ) override;
 
     /**
      * @brief Removes and deletes all pending events for the specified receiver.
@@ -99,7 +110,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual void removeEventsForReceiver(GObject* receiver) override;
+    virtual void removeEventsForReceiver
+        (
+        GObject* receiver
+        ) override;
 
     /**
      * @brief Unregisters the receiver's timers and returns them for re-registration elsewhere.
@@ -108,7 +122,10 @@ protected:
      *
      * Note: Thread-safe.
      */
-    virtual std::vector<TimerRegistration> takeTimersForReceiver(GObject* receiver) override;
+    virtual std::vector<TimerRegistration> takeTimersForReceiver
+        (
+        GObject* receiver
+        ) override;
 
     friend class GObject;
 
@@ -121,25 +138,25 @@ private:
 
     struct TimerData
     {
-        int                                   timerId;
-        int                                   intervalMs;
+        int timerId;
+        int intervalMs;
         GObject*                              receiver;
         std::chrono::steady_clock::time_point nextFire;
     };
 
     std::deque<EventPair>   m_eventQueue;
     std::vector<TimerData>  m_timers;
-    std::mutex              m_mutex;
+    std::mutex m_mutex;
     std::condition_variable m_cv;
-    std::atomic<bool>       m_interrupt{ false };
+    std::atomic<bool>       m_interrupt { false };
     // Set (under m_mutex) whenever a timer is registered or unregistered, so a processEvents()
     // call currently sleeping in wait_for() re-evaluates its wait deadline instead of sleeping
     // for the stale duration computed before the change.
-    bool                    m_timersChanged{ false };
+    bool m_timersChanged { false };
     // Set (under m_mutex) by wakeUp() and consumed by processEvents() once it returns from
     // waiting. Needed because the wait is predicate-based: without a state change to observe, a
     // bare notify_all() from wakeUp() cannot end the wait.
-    bool                    m_wakeUpRequested{ false };
+    bool m_wakeUpRequested { false };
 };
 
 #endif // GEVENTDISPATCHERDEFAULT_H
