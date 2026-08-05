@@ -1,0 +1,8 @@
+def build(bld):
+    kw = {}
+    kw["features"] = ["cxx", "cxxprogram", "debug-info"]
+    kw["source"] = bld.path.ant_glob("*.cpp")
+    kw["includes"] = ["."]
+    kw["use"] = ["QtLikeSignal", "google-test"]
+
+    bld(target="QtLikeSignal-Tests", **kw)

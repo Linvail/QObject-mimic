@@ -49,8 +49,7 @@ def build_tests(bld):
         bld.add_AddressSanitizer_on_Windows()
 
     bld.recurse("submodules/external")
-    bld.recurse("technology")
-    bld.recurse("tests")
+    bld.recurse("src")
 
 
 product_table = {

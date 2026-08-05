@@ -2,22 +2,22 @@ def build(bld):
     kw = {}
     kw["includes"] = ["boost"]
     kw["export_includes"] = ["boost"]
-    bld(target="boost", features='cxx', **kw)
+    bld(target="boost", features="cxx", **kw)
 
     kw_gtest = {}
     kw_gtest["features"] = ["cxx", "cxxstlib"]
     kw_gtest["source"] = [
         "googletest/googletest/src/gtest-all.cc",
-        "googletest/googlemock/src/gmock-all.cc"
+        "googletest/googlemock/src/gmock-all.cc",
     ]
     kw_gtest["includes"] = [
         "googletest/googletest/include",
         "googletest/googletest",
         "googletest/googlemock/include",
-        "googletest/googlemock"
+        "googletest/googlemock",
     ]
     kw_gtest["export_includes"] = [
         "googletest/googletest/include",
-        "googletest/googlemock/include"
+        "googletest/googlemock/include",
     ]
-    bld(target="gtest", **kw_gtest)
+    bld(target="google-test", **kw_gtest)

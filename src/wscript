@@ -1,0 +1,10 @@
+def build(bld):
+    kw = {}
+    kw["source"] = bld.path.ant_glob("*.cpp")
+    kw["includes"] = ["."]
+    kw["export_includes"] = ["."]
+    kw["use"] = ["boost"]
+    kw["features"] = ["cxx", "debug-info"]
+    bld(target="QtLikeSignal", **kw)
+
+    bld.recurse("tests")
