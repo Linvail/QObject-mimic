@@ -8,6 +8,23 @@ import glob, os
 #
 # @param ctx The Waf ConfigurationContext.
 #
+#
+# Only boost::signals2 is used by this project. Pulling the full Boost
+# superproject recursively fetches ~170 unrelated library submodules
+# (700+MB). Instead we only init signals2, its transitive dependencies
+# (computed via `boostdep --list-dependencies signals2`), and the two
+# tools submodules needed to bootstrap b2 and generate the header tree.
+#
+_BOOST_REQUIRED_LIBS = [
+    "assert", "bind", "concept_check", "config", "container_hash", "core",
+    "describe", "detail", "function", "function_types", "fusion", "headers",
+    "integer", "io", "iterator", "move", "mp11", "mpl", "optional", "parameter",
+    "predef", "preprocessor", "signals2", "smart_ptr", "throw_exception", "tuple",
+    "type_index", "type_traits", "typeof", "utility", "variant",
+]
+_BOOST_REQUIRED_TOOLS = ["build", "boost_install"]
+
+
 def check_and_bootstrap_boost(ctx):
     import sys, subprocess
 
@@ -20,9 +37,23 @@ def check_and_bootstrap_boost(ctx):
         )
         if not os.path.exists(boost_dir) or not os.listdir(boost_dir):
             Logs.error(
-                "Boost submodule is not initialized. Please run: git submodule update --init --recursive"
+                "Boost submodule is not initialized. Please run: git submodule update --init submodules/external/boost"
             )
             sys.exit(1)
+
+        submodule_paths = ["libs/%s" % lib for lib in _BOOST_REQUIRED_LIBS]
+        submodule_paths += ["tools/%s" % tool for tool in _BOOST_REQUIRED_TOOLS]
+        Logs.info("Initializing required Boost submodules (signals2 + dependencies)...")
+        res = subprocess.run(
+            ["git", "submodule", "update", "--init"] + submodule_paths,
+            cwd=boost_dir,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            Logs.error("Failed to initialize Boost submodules:\n%s" % res.stderr)
+            sys.exit(res.returncode)
+
         is_windows = sys.platform.startswith("win")
         try:
             if is_windows:
