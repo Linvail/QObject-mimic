@@ -10,6 +10,8 @@
     #include <windows.h>
 #endif
 
+using namespace QtLikeSignal;
+
 /**
  * @brief A thread that stays in its event loop until told to quit.
  *

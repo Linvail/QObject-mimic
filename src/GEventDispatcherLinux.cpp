@@ -1,4 +1,9 @@
 #include "GEventDispatcherLinux.h"
-GEventDispatcherLinux::GEventDispatcherLinux() = default;
 
-GEventDispatcherLinux::~GEventDispatcherLinux() = default;
+namespace QtLikeSignal
+{
+    GEventDispatcherLinux::GEventDispatcherLinux() = default;
+
+    GEventDispatcherLinux::~GEventDispatcherLinux() = default;
+
+}

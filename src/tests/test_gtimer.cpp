@@ -8,6 +8,8 @@
 #include <future>
 #include <thread>
 
+using namespace QtLikeSignal;
+
 /**
  * @brief Helper test receiver class for verifying GTimer singleShot member function invocations.
  */

@@ -10,6 +10,8 @@
 #include <string>
 #include <future>
 
+using namespace QtLikeSignal;
+
 /**
  * @brief Helper test receiver class for verifying GObject slot invocations.
  */

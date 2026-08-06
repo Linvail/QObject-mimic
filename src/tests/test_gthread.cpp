@@ -8,6 +8,8 @@
 #include <vector>
 #include <atomic>
 
+using namespace QtLikeSignal;
+
 /**
  * @brief Custom GThread subclass for testing thread execution.
  */
