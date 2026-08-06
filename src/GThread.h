@@ -31,9 +31,52 @@ public:
     virtual ~GThread() override;
 
     /**
-     * @brief Starts execution of the thread by invoking run(). Thread-safe.
+     * @brief Scheduling priority of a thread, mirroring QThread::Priority.
+     *
+     * The numeric order is load-bearing, not cosmetic: the UNIX backend scales these values
+     * arithmetically onto whatever range the platform scheduler reports, so IdlePriority must
+     * stay lowest and TimeCriticalPriority highest, with no gaps introduced between them.
+     *
+     * InheritPriority means "whatever the thread that called start() was running at". It is the
+     * state a thread begins in and is reported for a thread that is not running. start() accepts
+     * it -- it is the default -- but setPriority() does not, because once a thread is running
+     * there is no operation that corresponds to re-inheriting.
      */
-    void start();
+
+    enum Priority
+    {
+        IdlePriority,
+
+        LowestPriority,
+        LowPriority,
+        NormalPriority,
+        HighPriority,
+        HighestPriority,
+
+        TimeCriticalPriority,
+
+        InheritPriority
+    };
+    /**
+     * @brief Starts execution of the thread by invoking run(). Thread-safe.
+     *
+     * The new thread applies @p priority to itself as its first action, before started() is
+     * emitted and before run() is entered, so the whole of run() executes at the requested
+     * priority.
+     *
+     * It is not applied quite as early as Qt manages, and the difference is worth knowing if you
+     * are relying on priority for correctness rather than tuning. Qt creates the thread suspended
+     * on Windows, and passes the priority in pthread_attr_t on UNIX, so the thread never executes
+     * a single instruction at the wrong priority. std::thread offers neither, so between the OS
+     * creating the thread and the thread's first instruction it briefly runs at the creating
+     * thread's priority. Nothing belonging to this class runs in that window.
+     * @param priority Priority for the new thread. InheritPriority, the default, keeps the
+     * creating thread's priority and preserves the behaviour of the no-argument call.
+     */
+    void start
+        (
+        Priority priority = InheritPriority
+        );
 
     /**
      * @brief Requests the thread's event loop to quit with return code 0. Thread-safe.
@@ -70,6 +113,36 @@ public:
      * @return True if finished.
      */
     bool isFinished() const;
+
+    /**
+     * @brief Sets the scheduling priority of this thread. Thread-safe.
+     *
+     * Only meaningful while the thread is running, as in Qt: there is no OS thread to act on
+     * before start(), and the value is deliberately not remembered for a later start() either.
+     * A call made when the thread is not running is rejected with a warning and changes nothing,
+     * so priority() will still report InheritPriority afterwards. To give a thread a priority
+     * from the outset, pass one to start() instead.
+     *
+     * Rejected with a warning if @p priority is InheritPriority.
+     *
+     * What the OS does with the request varies, and a successful call does not promise the
+     * thread's scheduling actually changed. On Linux the default SCHED_OTHER policy reports a
+     * priority range of exactly one value, so every priority maps onto the same number and the
+     * call is accepted but has no effect; real prioritisation there needs a realtime policy and
+     * the privileges to select it. Qt behaves the same way. Windows applies all seven levels.
+     * @param priority The priority to apply. InheritPriority is not accepted.
+     */
+    void setPriority
+        (
+        Priority priority
+        );
+
+    /**
+     * @brief Gets the scheduling priority of this thread. Thread-safe.
+     * @return The priority last set on the running thread, or InheritPriority if the thread is
+     * not running or no priority has been set on this run.
+     */
+    Priority priority() const;
 
     /**
      * @brief Gets a pointer to the thread currently executing. Thread-safe.
@@ -156,6 +229,19 @@ private:
         return m_data;
     }
 
+    /**
+     * @brief Pushes a priority down to the OS thread.
+     *
+     * Split out from setPriority() only so the platform code sits in one place. The caller must
+     * hold m_priorityMutex and must already have established that the thread is running, because
+     * this dereferences m_thread and uses its native handle.
+     * @param priority The priority to apply. Never InheritPriority.
+     */
+    void applyPriority
+        (
+        Priority priority
+        );
+
     std::unique_ptr<std::thread> m_thread;
     std::shared_ptr<GThreadData> m_data;
     std::atomic<bool> m_running { false };
@@ -164,6 +250,17 @@ private:
     std::atomic<int> m_exitCode { 0 };
     mutable std::mutex m_waitMutex;
     std::condition_variable m_waitCv;
+
+    /**
+     * @brief Guards m_priority and every use of m_thread's native handle.
+     *
+     * Not merely protecting the enum. The run body clears m_running while holding this mutex, so
+     * a setPriority() that has observed m_running == true under the same lock is guaranteed the
+     * OS thread has not yet reached the end of its body -- without that, the handle could be
+     * touched after the thread had exited.
+     */
+    mutable std::mutex m_priorityMutex;
+    Priority m_priority { InheritPriority };
 
     static thread_local GThread* s_currentThread;
     friend class GCoreApplication;
