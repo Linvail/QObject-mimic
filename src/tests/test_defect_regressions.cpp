@@ -131,7 +131,7 @@ TEST( GEventDispatcherDefaultDefectTest, DeferredDeleteFollowedByQueuedEventInSa
             blockEnteredPromise.set_value();
             blockReleaseFuture.wait();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
 
     blockSig.emit();
     blockEnteredFuture.get();
@@ -147,7 +147,8 @@ TEST( GEventDispatcherDefaultDefectTest, DeferredDeleteFollowedByQueuedEventInSa
 
     // ... then a second, unrelated queued event for the SAME (about-to-be-deleted) receiver.
     GSignal<int> sig;
-    GObject::connect( sig, victim, &DefectUafTestReceiver::onValue, G::QueuedConnection );
+    GObject::connect( sig, victim, &DefectUafTestReceiver::onValue, ConnectionType::QueuedConnection
+                    );
     sig.emit( 123 );
 
     // Release the worker thread; it will now drain and dispatch BOTH events in one
@@ -163,7 +164,7 @@ TEST( GEventDispatcherDefaultDefectTest, DeferredDeleteFollowedByQueuedEventInSa
         quitSig, &dummyContext, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -223,7 +224,7 @@ TEST( GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly )
         {
             firePromise.set_value( std::chrono::steady_clock::now() );
         },
-        G::DirectConnection );
+        ConnectionType::DirectConnection );
 
     auto shortTimerStart = std::chrono::steady_clock::now();
     GObject::callLater( &shortTimer, &GTimer::start, 50 );
@@ -255,7 +256,7 @@ TEST( GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly )
             longTimer.stop();
             stoppedPromise.set_value();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
     stopSignal.emit();
     EXPECT_EQ( stoppedFuture.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready );
 
@@ -507,7 +508,7 @@ TEST( GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress )
             GSignal<> sig;
             GObject::connect( sig, &toggler.mSubject, []()
                 {
-                }, G::QueuedConnection );
+                }, ConnectionType::QueuedConnection );
             while( !stopReading.load( std::memory_order_acquire ) )
             {
                 ( void ) toggler.mSubject.thread();
@@ -572,7 +573,7 @@ TEST( GObjectDefectTest, ConcurrentEmitDuringDestructionStress )
         GSignal<int> sig;
         GObject::connect( sig, victim, []( int )
             {
-            }, G::QueuedConnection );
+            }, ConnectionType::QueuedConnection );
 
         std::atomic<bool> go { false };
         std::thread racer(
@@ -780,7 +781,7 @@ TEST( GThreadDefectTest, DispatcherUseDuringThreadShutdownStress )
         GSignal<>         sig;
         GObject::connect( sig, &subject, []()
             {
-            }, G::QueuedConnection );
+            }, ConnectionType::QueuedConnection );
 
         std::atomic<bool> stop { false };
         std::thread hammer(
@@ -847,7 +848,7 @@ TEST( GObjectDefectTest, PendingDeleteLaterIsProcessedWhenThreadStops )
             blockEnteredPromise.set_value();
             blockReleaseFuture.wait();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
 
     blockSig.emit();
     blockEnteredFuture.get();
@@ -1004,7 +1005,7 @@ TEST( GTimerDefectTest, SingleShotIsStoppedBeforeTimeoutIsEmitted )
             timer.stop();
             activePromise.set_value( active );
         },
-        G::DirectConnection );
+        ConnectionType::DirectConnection );
 
     // start() must run on the worker thread so the timer registers against its dispatcher.
     GObject::callLater( &timer, &GTimer::start, 10 );

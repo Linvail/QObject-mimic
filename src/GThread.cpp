@@ -491,7 +491,7 @@ namespace QtLikeSignal
         }
         // Explicit QueuedConnection (not Auto): post() must always defer, even when called from this
         // thread itself -- Auto would resolve to a same-thread call and run inline instead.
-        return dispatchMetaCall( this, std::move( aTask ), G::QueuedConnection );
+        return dispatchMetaCall( this, std::move( aTask ), ConnectionType::QueuedConnection );
     }
 
     //! Starting point for thread execution. Can be overridden. Default calls exec().

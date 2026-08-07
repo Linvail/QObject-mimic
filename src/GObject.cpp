@@ -167,7 +167,7 @@ namespace QtLikeSignal
                     }
                 };
 
-            if( !dispatchMetaCall( aContext, metaCall, G::QueuedConnection ) )
+            if( !dispatchMetaCall( aContext, metaCall, ConnectionType::QueuedConnection ) )
             {
                 // The target has no dispatcher yet, so this call can never run. Drop the registry
                 // entry we just created: leaving it behind is what made this failure permanent, since
@@ -296,7 +296,7 @@ namespace QtLikeSignal
                         }
                     }
                 },
-                G::QueuedConnection );
+                ConnectionType::QueuedConnection );
         }
 
         return true;
@@ -471,7 +471,7 @@ namespace QtLikeSignal
         (
         GObject* aTarget,               //!< Target GObject.
         std::function<void()> aSlot,    //!< Callback function.
-        G::ConnectionType aType         //!< Connection type.
+        ConnectionType aType         //!< Connection type.
         )
     {
         if( !aTarget )
@@ -480,21 +480,21 @@ namespace QtLikeSignal
         }
 
         GThread* targetThread = aTarget->thread();
-        G::ConnectionType activeType = aType;
-        if( activeType == G::AutoConnection )
+        ConnectionType activeType = aType;
+        if( activeType == ConnectionType::AutoConnection )
         {
             GThread* currentThread = GThread::currentThread();
             if( currentThread == targetThread )
             {
-                activeType = G::DirectConnection;
+                activeType = ConnectionType::DirectConnection;
             }
             else
             {
-                activeType = G::QueuedConnection;
+                activeType = ConnectionType::QueuedConnection;
             }
         }
 
-        if( activeType == G::QueuedConnection )
+        if( activeType == ConnectionType::QueuedConnection )
         {
             auto* event = new GMetaCallEvent( aSlot );
             if( auto tData = aTarget->threadData() )

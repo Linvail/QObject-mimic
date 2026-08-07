@@ -132,14 +132,14 @@ namespace QtLikeSignal
         }
         //! Connect Overload 1: connects a signal to a non-overloaded member function slot.
         template <typename Signal, typename Receiver, typename Slot>
-        static std::enable_if_t<G::MemberFunctionTraits<Slot>::is_member_function, G::
+        static std::enable_if_t<MemberFunctionTraits<Slot>::is_member_function,
             ConnectionHandle>
         connect
             (
             Signal& aSignal,
             Receiver* aReceiver,
             Slot aSlot,
-            G::ConnectionType aType = G::AutoConnection
+            ConnectionType aType = ConnectionType::AutoConnection
             );
 
         //! Connect Overload 2: connects an overloaded void member function slot inherited from a
@@ -148,11 +148,11 @@ namespace QtLikeSignal
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
             std::is_base_of<SlotClass, Receiver>::value &&
             !std::is_same<SlotClass, Receiver>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
             void ( SlotClass::*aSlot )( SignalArgs... ),
-            G::ConnectionType aType = G::AutoConnection );
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 3: connects an overloaded const void member function slot inherited
         //! from a base class.
@@ -160,11 +160,11 @@ namespace QtLikeSignal
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
             std::is_base_of<SlotClass, Receiver>::value &&
             !std::is_same<SlotClass, Receiver>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
             void ( SlotClass::*aSlot )( SignalArgs... ) const,
-            G::ConnectionType aType = G::AutoConnection );
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 4: connects an overloaded non-void returning member function slot
         //! inherited from a base class.
@@ -173,11 +173,11 @@ namespace QtLikeSignal
             std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::
             value &&
             !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
             Ret ( SlotClass::*aSlot )( SignalArgs... ),
-            G::ConnectionType aType = G::AutoConnection );
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 5: connects an overloaded non-void returning const member function
         //! slot inherited from a base class.
@@ -186,71 +186,71 @@ namespace QtLikeSignal
             std::is_base_of<GObject, Receiver>::value && std::is_base_of<SlotClass, Receiver>::
             value &&
             !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
             Ret ( SlotClass::*aSlot )( SignalArgs... ) const,
-            G::ConnectionType aType = G::AutoConnection );
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 6: connects an overloaded void member function slot defined directly
         //! on the receiver.
         template <typename ... SignalArgs, typename Receiver>
-        static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+        static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
-            void ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ),
-            G::ConnectionType aType = G::AutoConnection );
+            void ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ),
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 7: connects an overloaded const void member function slot defined
         //! directly on the receiver.
         template <typename ... SignalArgs, typename Receiver>
-        static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>
+        static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
-            void ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,
-            G::ConnectionType aType = G::AutoConnection );
+            void ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 8: connects an overloaded non-void returning member function slot
         //! defined directly on the receiver.
         template <typename ... SignalArgs, typename Receiver, typename Ret>
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
             !std::is_same<Ret, void>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
-            Ret ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ),
-            G::ConnectionType aType = G::AutoConnection );
+            Ret ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ),
+            ConnectionType aType = ConnectionType::AutoConnection );
 
         //! Connect Overload 9: connects an overloaded non-void returning const member function
         //! slot defined directly on the receiver.
         template <typename ... SignalArgs, typename Receiver, typename Ret>
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
             !std::is_same<Ret, void>::value,
-            G::ConnectionHandle>
+            ConnectionHandle>
         connect( GSignal<SignalArgs...>& aSignal,
             Receiver* aReceiver,
-            Ret ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,
-            G::ConnectionType aType = G::AutoConnection );
+            Ret ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,
+            ConnectionType aType = ConnectionType::AutoConnection );
         //! Connect Overload 10: connects a signal to a free function, lambda, or general functor
         //! slot.
         template <typename Signal, typename Functor>
-        static std::enable_if_t<!G::MemberFunctionTraits<Functor>::is_member_function,
-            G::ConnectionHandle>
+        static std::enable_if_t<!MemberFunctionTraits<Functor>::is_member_function,
+            ConnectionHandle>
         connect
             (
             Signal& aSignal,
             GObject* aContext,
             Functor aSlot,
-            G::ConnectionType aType = G::AutoConnection
+            ConnectionType aType = ConnectionType::AutoConnection
             );
         static void disconnect
             (
-            const G::ConnectionHandle& aHandle
+            const ConnectionHandle& aHandle
             );
         //! CallLater Overload 1: schedules a non-overloaded member function slot to run deferred.
         template <typename Receiver, typename Slot, typename ... Args>
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
-            G::MemberFunctionTraits<Slot>::is_member_function,
+            MemberFunctionTraits<Slot>::is_member_function,
             void>
         callLater
             (
@@ -266,7 +266,7 @@ namespace QtLikeSignal
             std::is_base_of<SlotClass, Receiver>::value &&
             !std::is_same<SlotClass, Receiver>::value,
             void>
-        callLater( Receiver* aReceiver, void ( SlotClass::*aSlot )( G::NonDeduced<Args>... ), Args&&
+        callLater( Receiver* aReceiver, void ( SlotClass::*aSlot )( NonDeduced<Args>... ), Args&&
             ...
             aArgs );
 
@@ -278,7 +278,7 @@ namespace QtLikeSignal
             !std::is_same<SlotClass, Receiver>::value,
             void>
         callLater( Receiver* aReceiver,
-            void ( SlotClass::*aSlot )( G::NonDeduced<Args>... ) const,
+            void ( SlotClass::*aSlot )( NonDeduced<Args>... ) const,
             Args&&... aArgs );
 
         //! CallLater Overload 4: schedules an overloaded non-void returning member function slot
@@ -289,7 +289,7 @@ namespace QtLikeSignal
             value &&
             !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
             void>
-        callLater( Receiver* aReceiver, Ret ( SlotClass::*aSlot )( G::NonDeduced<Args>... ), Args&&
+        callLater( Receiver* aReceiver, Ret ( SlotClass::*aSlot )( NonDeduced<Args>... ), Args&&
             ...
             aArgs );
 
@@ -302,7 +302,7 @@ namespace QtLikeSignal
             !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
             void>
         callLater( Receiver* aReceiver,
-            Ret ( SlotClass::*aSlot )( G::NonDeduced<Args>... ) const,
+            Ret ( SlotClass::*aSlot )( NonDeduced<Args>... ) const,
             Args&&... aArgs );
 
         //! CallLater Overload 6: schedules an overloaded void member function slot defined
@@ -310,7 +310,7 @@ namespace QtLikeSignal
         template <typename Receiver, typename ... Args>
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
         callLater( Receiver* aReceiver,
-            void ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ),
+            void ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ),
             Args&&... aArgs );
 
         //! CallLater Overload 7: schedules an overloaded const void member function slot defined
@@ -318,7 +318,7 @@ namespace QtLikeSignal
         template <typename Receiver, typename ... Args>
         static std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>
         callLater( Receiver* aReceiver,
-            void ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ) const,
+            void ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ) const,
             Args&&... aArgs );
 
         //! CallLater Overload 8: schedules an overloaded non-void returning member function slot
@@ -328,7 +328,7 @@ namespace QtLikeSignal
             !std::is_same<Ret, void>::value,
             void>
         callLater( Receiver* aReceiver,
-            Ret ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ),
+            Ret ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ),
             Args&&... aArgs );
 
         //! CallLater Overload 9: schedules an overloaded non-void returning const member function
@@ -338,7 +338,7 @@ namespace QtLikeSignal
             !std::is_same<Ret, void>::value,
             void>
         callLater( Receiver* aReceiver,
-            Ret ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ) const,
+            Ret ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ) const,
             Args&&... aArgs );
         //! CallLater Overload 10: schedules a static or free function to run deferred.
         template <typename Func, typename ... Args>
@@ -362,10 +362,10 @@ namespace QtLikeSignal
         //! CallLater Overload 12: fallback overload producing a compile-time error for unsupported
         //! targets (e.g. lambdas).
         template <typename Target, typename ... Args>
-        static std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function &&
+        static std::enable_if_t<!MemberFunctionTraits<Target>::is_member_function &&
             !( std::is_pointer<Target>::value &&
             std::is_function<std::remove_pointer_t<Target> >::value ) &&
-            !G::IsGSignal<std::decay_t<Target> >::value,
+            !IsGSignal<std::decay_t<Target> >::value,
             void>
         callLater
             (
@@ -437,7 +437,7 @@ namespace QtLikeSignal
             (
             GObject* aTarget,
             std::function<void()> aSlot,
-            G::ConnectionType aType
+            ConnectionType aType
             );
 
         //! Grants the event queue access to event(), which it alone invokes.
@@ -466,21 +466,20 @@ namespace QtLikeSignal
     //! Because the target slot is not overloaded, the compiler can directly deduce the Slot type
     //! without needing explicit template resolution.
     template <typename Signal, typename Receiver, typename Slot>
-    std::enable_if_t<G::MemberFunctionTraits<Slot>::is_member_function, G::ConnectionHandle>
-    GObject::
+    std::enable_if_t<MemberFunctionTraits<Slot>::is_member_function, ConnectionHandle>GObject::
     connect
         (
         Signal& aSignal,          //!< The signal to connect.
         Receiver* aReceiver,      //!< The object receiving the signal (must derive from GObject).
         Slot aSlot,                //!< The member function to call when the signal is emitted.
-        G::ConnectionType aType   //!< The type of connection.
+        ConnectionType aType   //!< The type of connection.
         )
     {
-        using SlotClass = typename G::MemberFunctionTraits<Slot>::class_type;
+        using SlotClass = typename MemberFunctionTraits<Slot>::class_type;
 
         static_assert(
             std::is_base_of<GObject, Receiver>::value, "Receiver must be an instance of GObject." );
-        static_assert( G::MemberFunctionTraits<Slot>::is_member_function,
+        static_assert( MemberFunctionTraits<Slot>::is_member_function,
             "Slot must be a member function pointer." );
         static_assert( std::is_base_of<SlotClass, Receiver>::value,
             "Slot must be a member function of Receiver or one of its base classes." );
@@ -524,7 +523,7 @@ namespace QtLikeSignal
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
         std::is_base_of<SlotClass, Receiver>::value &&
         !std::is_same<SlotClass, Receiver>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,           //!< The signal to connect.
         Receiver* aReceiver,                        //!< The object receiving the signal.
@@ -532,7 +531,7 @@ namespace QtLikeSignal
         (
         SignalArgs...
         ),                                          //!< The member function pointer matching SignalArgs.
-        G::ConnectionType aType                     //!< The type of connection.
+        ConnectionType aType                     //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -571,12 +570,12 @@ namespace QtLikeSignal
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
         std::is_base_of<SlotClass, Receiver>::value &&
         !std::is_same<SlotClass, Receiver>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
         void ( SlotClass::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs.
-        G::ConnectionType aType               //!< The type of connection.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -616,7 +615,7 @@ namespace QtLikeSignal
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
         std::is_base_of<SlotClass, Receiver>::value &&
         !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
@@ -624,7 +623,7 @@ namespace QtLikeSignal
         (
         SignalArgs...
         ),                                    //!< The member function pointer matching SignalArgs and returning Ret.
-        G::ConnectionType aType               //!< The type of connection.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -662,12 +661,12 @@ namespace QtLikeSignal
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
         std::is_base_of<SlotClass, Receiver>::value &&
         !std::is_same<SlotClass, Receiver>::value && !std::is_same<Ret, void>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
         Ret ( SlotClass::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs and returning Ret.
-        G::ConnectionType aType               //!< The type of connection.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -700,16 +699,16 @@ namespace QtLikeSignal
     }
 
     //! Connect Overload 6 definition. If the target slot is overloaded (e.g. onEvent() and
-    //! onEvent(int)), the compiler cannot deduce Slot in Overload 1. Using G::NonDeduced<Receiver>
+    //! onEvent(int)), the compiler cannot deduce Slot in Overload 1. Using NonDeduced<Receiver>
     //! forces the compiler to use SignalArgs from the signal to perfectly select the right
     //! overload pointer. SignalArgs is used both to deduce and to select the slot overload.
     template <typename ... SignalArgs, typename Receiver>
-    std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>GObject::connect
+    std::enable_if_t<std::is_base_of<GObject, Receiver>::value, ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
-        void ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ),  //!< The member function pointer matching SignalArgs.
-        G::ConnectionType aType               //!< The type of connection.
+        void ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ),  //!< The member function pointer matching SignalArgs.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -744,12 +743,12 @@ namespace QtLikeSignal
     //! Connect Overload 7 definition. Same as Overload 6, but specifically matches const member
     //! functions.
     template <typename ... SignalArgs, typename Receiver>
-    std::enable_if_t<std::is_base_of<GObject, Receiver>::value, G::ConnectionHandle>GObject::connect
+    std::enable_if_t<std::is_base_of<GObject, Receiver>::value, ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
-        void ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs.
-        G::ConnectionType aType               //!< The type of connection.
+        void ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -786,12 +785,12 @@ namespace QtLikeSignal
     //! that returns Ret compiles successfully.
     template <typename ... SignalArgs, typename Receiver, typename Ret>
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
-        Ret ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ),  //!< The member function pointer matching SignalArgs and returning Ret.
-        G::ConnectionType aType               //!< The type of connection.
+        Ret ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ),  //!< The member function pointer matching SignalArgs and returning Ret.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -827,12 +826,12 @@ namespace QtLikeSignal
     //! functions.
     template <typename ... SignalArgs, typename Receiver, typename Ret>
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value && !std::is_same<Ret, void>::value,
-        G::ConnectionHandle>GObject::connect
+        ConnectionHandle>GObject::connect
         (
         GSignal<SignalArgs...>& aSignal,     //!< The signal to connect.
         Receiver* aReceiver,                  //!< The object receiving the signal.
-        Ret ( G::NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs and returning Ret.
-        G::ConnectionType aType               //!< The type of connection.
+        Ret ( NonDeduced<Receiver>::*aSlot )( SignalArgs... ) const,  //!< The const member function pointer matching SignalArgs and returning Ret.
+        ConnectionType aType               //!< The type of connection.
         )
     {
         if( !aReceiver )
@@ -868,13 +867,13 @@ namespace QtLikeSignal
     //! functions, lambdas, or general functors. Binds the functor's lifetime and thread affinity
     //! to the provided context object.
     template <typename Signal, typename Functor>
-    std::enable_if_t<!G::MemberFunctionTraits<Functor>::is_member_function, G::ConnectionHandle>
-    GObject::connect
+    std::enable_if_t<!MemberFunctionTraits<Functor>::is_member_function, ConnectionHandle>GObject::
+    connect
         (
         Signal& aSignal,           //!< The signal to connect.
         GObject* aContext,         //!< The GObject context defining thread affinity and lifetime.
         Functor aSlot,             //!< The slot functor (lambda, std::function, etc.).
-        G::ConnectionType aType    //!< The type of connection.
+        ConnectionType aType    //!< The type of connection.
         )
     {
         if( !aContext )
@@ -909,7 +908,7 @@ namespace QtLikeSignal
     //! Disconnects a signal connection using a connection handle. Thread-safe.
     inline void GObject::disconnect
         (
-        const G::ConnectionHandle& aHandle  //!< The handle to disconnect.
+        const ConnectionHandle& aHandle  //!< The handle to disconnect.
         )
     {
         aHandle.disconnect();
@@ -920,7 +919,7 @@ namespace QtLikeSignal
     //! Slot type.
     template <typename Receiver, typename Slot, typename ... Args>
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value &&
-        G::MemberFunctionTraits<Slot>::is_member_function,
+        MemberFunctionTraits<Slot>::is_member_function,
         void>GObject::callLater
         (
         Receiver* aReceiver,  //!< Target object receiving the call.
@@ -928,11 +927,11 @@ namespace QtLikeSignal
         Args&&... aArgs        //!< Arguments passed to slot.
         )
     {
-        using SlotClass = typename G::MemberFunctionTraits<Slot>::class_type;
+        using SlotClass = typename MemberFunctionTraits<Slot>::class_type;
 
         static_assert(
             std::is_base_of<GObject, Receiver>::value, "Receiver must be an instance of GObject." );
-        static_assert( G::MemberFunctionTraits<Slot>::is_member_function,
+        static_assert( MemberFunctionTraits<Slot>::is_member_function,
             "Slot must be a member function pointer." );
         static_assert( std::is_base_of<SlotClass, Receiver>::value,
             "Slot must be a member function of Receiver or one of its base classes." );
@@ -976,7 +975,7 @@ namespace QtLikeSignal
         Receiver* aReceiver,  //!< Target object receiving the call.
         void ( SlotClass::*aSlot )
         (
-        G::NonDeduced<Args>...
+        NonDeduced<Args>...
         ),                    //!< Member function pointer.
         Args&&... aArgs        //!< Arguments passed to slot.
         )
@@ -1015,7 +1014,7 @@ namespace QtLikeSignal
         void>GObject::callLater
         (
         Receiver* aReceiver,                                             //!< Target object receiving the call.
-        void ( SlotClass::*aSlot )( G::NonDeduced<Args>... ) const,       //!< Const member function pointer.
+        void ( SlotClass::*aSlot )( NonDeduced<Args>... ) const,       //!< Const member function pointer.
         Args&&... aArgs                                                   //!< Arguments passed to slot.
         )
     {
@@ -1056,7 +1055,7 @@ namespace QtLikeSignal
         Receiver* aReceiver,  //!< Target object receiving the call.
         Ret ( SlotClass::*aSlot )
         (
-        G::NonDeduced<Args>...
+        NonDeduced<Args>...
         ),                    //!< Member function pointer.
         Args&&... aArgs        //!< Arguments passed to slot.
         )
@@ -1095,7 +1094,7 @@ namespace QtLikeSignal
         void>GObject::callLater
         (
         Receiver* aReceiver,                                        //!< Target object receiving the call.
-        Ret ( SlotClass::*aSlot )( G::NonDeduced<Args>... ) const,   //!< Const member function pointer.
+        Ret ( SlotClass::*aSlot )( NonDeduced<Args>... ) const,   //!< Const member function pointer.
         Args&&... aArgs                                              //!< Arguments passed to slot.
         )
     {
@@ -1125,13 +1124,13 @@ namespace QtLikeSignal
     }
 
     //! CallLater Overload 6 definition. If the target slot is overloaded, the compiler cannot
-    //! deduce Slot in Overload 1. Using G::NonDeduced<Receiver>, this overload forces the compiler
+    //! deduce Slot in Overload 1. Using NonDeduced<Receiver>, this overload forces the compiler
     //! to use the passed args types to select the right overload.
     template <typename Receiver, typename ... Args>
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>GObject::callLater
         (
         Receiver* aReceiver,                                                  //!< Target object receiving the call.
-        void ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ),   //!< Member function pointer.
+        void ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ),   //!< Member function pointer.
         Args&&... aArgs                                                       //!< Arguments passed to slot.
         )
     {
@@ -1166,7 +1165,7 @@ namespace QtLikeSignal
     std::enable_if_t<std::is_base_of<GObject, Receiver>::value, void>GObject::callLater
         (
         Receiver* aReceiver,                                                        //!< Target object receiving the call.
-        void ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ) const,   //!< Const member function pointer.
+        void ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ) const,   //!< Const member function pointer.
         Args&&... aArgs                                                             //!< Arguments passed to slot.
         )
     {
@@ -1204,7 +1203,7 @@ namespace QtLikeSignal
         void>GObject::callLater
         (
         Receiver* aReceiver,                                                 //!< Target object receiving the call.
-        Ret ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ),   //!< Member function pointer.
+        Ret ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ),   //!< Member function pointer.
         Args&&... aArgs                                                     //!< Arguments passed to slot.
         )
     {
@@ -1240,7 +1239,7 @@ namespace QtLikeSignal
         void>GObject::callLater
         (
         Receiver* aReceiver,                                                       //!< Target object receiving the call.
-        Ret ( G::NonDeduced<Receiver>::*aSlot )( G::NonDeduced<Args>... ) const,   //!< Const member function pointer.
+        Ret ( NonDeduced<Receiver>::*aSlot )( NonDeduced<Args>... ) const,   //!< Const member function pointer.
         Args&&... aArgs                                                           //!< Arguments passed to slot.
         )
     {
@@ -1354,10 +1353,10 @@ namespace QtLikeSignal
     //! deduplication. Lambdas cannot be reliably hashed, so this overload intentionally catches
     //! lambdas and general functors (Target) and triggers a static_assert.
     template <typename Target, typename ... Args>
-    std::enable_if_t<!G::MemberFunctionTraits<Target>::is_member_function &&
+    std::enable_if_t<!MemberFunctionTraits<Target>::is_member_function &&
         !( std::is_pointer<Target>::value &&
         std::is_function<std::remove_pointer_t<Target> >::value ) &&
-        !G::IsGSignal<std::decay_t<Target> >::value,
+        !IsGSignal<std::decay_t<Target> >::value,
         void>GObject::callLater
         (
         GObject* aContext,  //!< Target GObject context.

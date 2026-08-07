@@ -125,13 +125,14 @@ private:
 //! Tests direct signal-slot connection and emission.
 //!
 //! Verifies that GObject::connect() correctly binds a GSignal to a GObject member function slot
-//! using G::DirectConnection, and that GSignal::emit() properly invokes the receiver slot.
+//! using ConnectionType::DirectConnection, and that GSignal::emit() properly invokes the receiver slot.
 TEST( GObjectTest, DirectSignalSlotConnection )
 {
     GSignal<int>        sig;
     GObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, G::DirectConnection );
+    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+        DirectConnection );
 
     sig.emit( 42 );
     EXPECT_EQ( receiver.callCount(), 1 );
@@ -236,7 +237,7 @@ TEST( GObjectTest, LambdaSlotConnection )
             receivedValue = aVal;
             callCount++;
         },
-        G::DirectConnection );
+        ConnectionType::DirectConnection );
 
     sig( 100 );
     EXPECT_EQ( callCount, 1 );
@@ -256,7 +257,8 @@ TEST( GObjectTest, MultiArgumentSignal )
     GSignal<int, std::string, double> sig;
     GObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onMultiArg, G::DirectConnection );
+    GObject::connect( sig, &receiver, &GObjectTestReceiver::onMultiArg, ConnectionType::
+        DirectConnection );
 
     sig.emit( 7, "Hello Signals", 3.14159 );
     EXPECT_EQ( receiver.callCount(), 1 );
@@ -267,7 +269,7 @@ TEST( GObjectTest, MultiArgumentSignal )
 
 //! Tests null receiver and context safety when connecting signals.
 //!
-//! Verifies GObject::connect() safely returns an invalid G::ConnectionHandle when passed nullptr
+//! Verifies GObject::connect() safely returns an invalid ConnectionHandle when passed nullptr
 //! for receiver or context pointers.
 TEST( GObjectTest, NullReceiverOrContextConnection )
 {
@@ -310,7 +312,7 @@ TEST( GObjectTest, TimerStartAndKill )
 
 //! Tests connect() with member function slot when receiver lives in another thread.
 //!
-//! Verifies that GObject::connect() with G::AutoConnection or G::QueuedConnection routes signal
+//! Verifies that GObject::connect() with ConnectionType::AutoConnection or ConnectionType::QueuedConnection routes signal
 //! emissions across thread boundaries into the receiver's thread event loop for execution.
 TEST( GObjectTest, CrossThreadMemberFunctionConnection )
 {
@@ -325,12 +327,13 @@ TEST( GObjectTest, CrossThreadMemberFunctionConnection )
     GObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, G::AutoConnection );
+    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+        AutoConnection );
     GObject::connect(
         sig, &receiver, [&workerThread]( int )
         {
             workerThread.quit();
-        }, G::AutoConnection );
+        }, ConnectionType::AutoConnection );
 
     sig.emit( 100 );
 
@@ -370,7 +373,7 @@ TEST( GObjectTest, CrossThreadLambdaConnection )
             executedInThread = GThread::currentThread();
             workerThread.quit();
         },
-        G::AutoConnection );
+        ConnectionType::AutoConnection );
 
     sig.emit( "hello cross thread" );
 
@@ -382,7 +385,7 @@ TEST( GObjectTest, CrossThreadLambdaConnection )
 
 //! Tests signal emission when receiver is destroyed before event processing.
 //!
-//! Verifies that when a receiver object connected via G::QueuedConnection is destroyed prior to
+//! Verifies that when a receiver object connected via ConnectionType::QueuedConnection is destroyed prior to
 //! the event dispatcher processing the pending GMetaCallEvent, the event is safely removed/ignored
 //! and no slot function is invoked or use-after-free error occurs.
 TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
@@ -411,7 +414,7 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
             blockEnteredPromise.set_value();
             blockReleaseFuture.wait();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
 
     blockSig.emit();
     blockEnteredFuture.get();
@@ -423,7 +426,8 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
         receiver->moveToThread( &workerThread );
 
         GObject::connect(
-            sig, receiver.get(), &GObjectTestReceiver::onValueReceived, G::QueuedConnection );
+            sig, receiver.get(), &GObjectTestReceiver::onValueReceived, ConnectionType::
+            QueuedConnection );
 
         sig.emit( 55 );
         // Receiver is deleted here before workerThread event loop processes the queued event
@@ -437,7 +441,7 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
         quitSig, &dummyContext, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -475,7 +479,7 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
             blockEnteredPromise.set_value();
             blockReleaseFuture.wait();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
 
     blockSig.emit();
     blockEnteredFuture.get();
@@ -491,7 +495,7 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
             sig, &context, [&lambdaExecuted]( int )
             {
                 lambdaExecuted = true;
-            }, G::QueuedConnection );
+            }, ConnectionType::QueuedConnection );
 
         sig.emit( 77 );
         // context goes out of scope and is destroyed here
@@ -505,7 +509,7 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
         quitSig, &dummyContext, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -513,9 +517,9 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
     EXPECT_FALSE( lambdaExecuted );
 }
 
-//! Tests connect() with explicit G::DirectConnection when receiver lives in another thread.
+//! Tests connect() with explicit ConnectionType::DirectConnection when receiver lives in another thread.
 //!
-//! Verifies that when G::DirectConnection is explicitly requested, the slot function is invoked
+//! Verifies that when ConnectionType::DirectConnection is explicitly requested, the slot function is invoked
 //! synchronously on the emitting thread, even if the receiver belongs to a different thread.
 TEST( GObjectTest, CrossThreadDirectConnection )
 {
@@ -530,7 +534,8 @@ TEST( GObjectTest, CrossThreadDirectConnection )
     GObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, G::DirectConnection );
+    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+        DirectConnection );
 
     sig.emit( 888 );
 
@@ -576,7 +581,7 @@ TEST( GObjectTest, CallLaterMemberFunction )
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -620,7 +625,7 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
                 return canProceed;
             } );
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
 
     blockSig.emit();
 
@@ -643,7 +648,7 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -676,7 +681,7 @@ TEST( GObjectTest, CallLaterFreeFunction )
         quitSig, &context, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -699,7 +704,8 @@ TEST( GObjectTest, CallLaterSignal )
     receiver.moveToThread( &workerThread );
 
     GSignal<int> sig;
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, G::DirectConnection );
+    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+        DirectConnection );
 
     GObject::callLater( &receiver, sig, 777 );
 
@@ -708,7 +714,7 @@ TEST( GObjectTest, CallLaterSignal )
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();
@@ -741,7 +747,7 @@ TEST( GObjectTest, CallLaterMultipleCycles )
         syncSig1, &receiver, [&sync1Done]()
         {
             sync1Done = true;
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     syncSig1.emit();
 
     while( !sync1Done )
@@ -760,7 +766,7 @@ TEST( GObjectTest, CallLaterMultipleCycles )
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
-        }, G::QueuedConnection );
+        }, ConnectionType::QueuedConnection );
     quitSig.emit();
 
     workerThread.wait();

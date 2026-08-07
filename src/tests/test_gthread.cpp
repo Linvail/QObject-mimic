@@ -87,7 +87,7 @@ TEST( GThreadTest, LifecycleAndSignals )
         thread.started, &context, [&startedFired]()
         {
             startedFired = true;
-        }, G::DirectConnection );
+        }, ConnectionType::DirectConnection );
 
     GObject::connect(
         thread.finished,
@@ -96,7 +96,7 @@ TEST( GThreadTest, LifecycleAndSignals )
         {
             finishedFired = true;
         },
-        G::DirectConnection );
+        ConnectionType::DirectConnection );
 
     thread.start();
     thread.wait();
@@ -241,8 +241,8 @@ TEST( GThreadTest, PostRunsTaskOnTargetThread )
 }
 
 //! Tests GThread::post() always defers, even when called from the target thread itself.
-//! Regression coverage for the reason post() explicitly requests G::QueuedConnection rather
-//! than G::AutoConnection: Auto would resolve to a same-thread direct call and run the task
+//! Regression coverage for the reason post() explicitly requests ConnectionType::QueuedConnection rather
+//! than ConnectionType::AutoConnection: Auto would resolve to a same-thread direct call and run the task
 //! inline, before post() returns, instead of on a later loop iteration.
 TEST( GThreadTest, PostFromOwnThreadStillDefers )
 {

@@ -133,7 +133,7 @@ static void drainQueuedEvents
         {
             syncPromise.set_value();
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
     syncSignal.emit();
     EXPECT_EQ( syncFuture.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready )
         << "worker event loop did not drain.";
@@ -169,7 +169,7 @@ TEST( GTimerTest, SingleShotStaticLambdaFires )
                 firedPromise.set_value();
             } );
         },
-        G::QueuedConnection );
+        ConnectionType::QueuedConnection );
     trigger.emit();
 
     EXPECT_EQ( firedFuture.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready )
@@ -274,7 +274,7 @@ TEST( GTimerTest, ManualTimerEventTriggering )
             {
                 timeoutSignaled = true;
             },
-            G::DirectConnection );
+            ConnectionType::DirectConnection );
 
             GTimerEvent event( tid );
             timer.triggerTimerEvent( &event );

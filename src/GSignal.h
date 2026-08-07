@@ -17,7 +17,7 @@ namespace QtLikeSignal
         GSignal() = default;
 
         //! Connects a callable slot to this signal. Thread-safe.
-        G::ConnectionHandle connect
+        ConnectionHandle connect
             (
             std::function<void( Args... )> aSlot  //!< The callable slot function.
             )
@@ -28,7 +28,7 @@ namespace QtLikeSignal
         //! Disconnects a connection by handle. Thread-safe.
         void disconnect
             (
-            const G::ConnectionHandle& aConnection  //!< The connection handle to disconnect.
+            const ConnectionHandle& aConnection  //!< The connection handle to disconnect.
             )
         {
             aConnection.disconnect();
@@ -56,15 +56,12 @@ namespace QtLikeSignal
         boost::signals2::signal<void( Args... )> mSignal;
     };
 
-    namespace G
+    //! Specialization of IsGSignal matching any GSignal<Args...>, so IsGSignal<T>::value is
+    //! true precisely when T is a signal.
+    template<typename ... Args>
+    struct IsGSignal<GSignal<Args...> > : std::true_type
     {
-        //! Specialization of IsGSignal matching any GSignal<Args...>, so IsGSignal<T>::value is
-        //! true precisely when T is a signal.
-        template<typename ... Args>
-        struct IsGSignal<GSignal<Args...> > : std::true_type
-        {
-        };
-    }
+    };
 }
 
 #endif // GSIGNAL_H
