@@ -7,63 +7,46 @@
 
 namespace QtLikeSignal
 {
-    /**
-     * @brief Simple thread-safe signal class wrapping boost::signals2::signal.
-     * @tparam Args Argument types passed when emitting the signal.
-     */
+    //! Simple thread-safe signal class wrapping boost::signals2::signal. Args are the argument
+    //! types passed when emitting the signal.
     template<typename ... Args>
     class GSignal
     {
     public:
-        /**
-         * @brief Constructs a new GSignal.
-         */
+        //! Constructs a new GSignal.
         GSignal() = default;
 
-        /**
-         * @brief Connects a callable slot to this signal.
-         * @param slot The callable slot function.
-         * @return Connection handle. Thread-safe.
-         */
+        //! Connects a callable slot to this signal. Thread-safe.
         G::ConnectionHandle connect
             (
-            std::function<void( Args... )> slot
+            std::function<void( Args... )> slot  //!< The callable slot function.
             )
         {
             return m_signal.connect( slot );
         }
 
-        /**
-         * @brief Disconnects a connection by handle.
-         * @param connection The connection handle to disconnect. Thread-safe.
-         */
+        //! Disconnects a connection by handle. Thread-safe.
         void disconnect
             (
-            const G::ConnectionHandle& connection
+            const G::ConnectionHandle& connection  //!< The connection handle to disconnect.
             )
         {
             connection.disconnect();
         }
 
-        /**
-         * @brief Emits the signal with the specified arguments.
-         * @param args Arguments to pass to all connected slots. Thread-safe.
-         */
+        //! Emits the signal with the specified arguments. Thread-safe.
         void emit
             (
-            Args... args
+            Args... args  //!< Arguments to pass to all connected slots.
             )
         {
             m_signal( args ... );
         }
 
-        /**
-         * @brief Function call operator to emit the signal.
-         * @param args Arguments to pass to all connected slots. Thread-safe.
-         */
+        //! Function call operator to emit the signal. Thread-safe.
         void operator()
             (
-            Args... args
+            Args... args  //!< Arguments to pass to all connected slots.
             )
         {
             m_signal( args ... );
@@ -75,10 +58,8 @@ namespace QtLikeSignal
 
     namespace G
     {
-        /**
-         * @brief Specialization of IsGSignal for GSignal types.
-         * @tparam Args Argument types.
-         */
+        //! Specialization of IsGSignal matching any GSignal<Args...>, so IsGSignal<T>::value is
+        //! true precisely when T is a signal.
         template<typename ... Args>
         struct IsGSignal<GSignal<Args...> > : std::true_type
         {

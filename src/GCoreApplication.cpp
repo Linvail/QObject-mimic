@@ -13,10 +13,11 @@ namespace QtLikeSignal
 {
     GCoreApplication* GCoreApplication::s_instance = nullptr;
 
+    //! Constructs the application object.
     GCoreApplication::GCoreApplication
         (
-        int& argc,
-        char** argv
+        int& argc,     //!< Argument count.
+        char** argv    //!< Argument vector.
         )
         : GObject()
     {
@@ -48,6 +49,7 @@ namespace QtLikeSignal
         this->moveToThread( m_mainThread.get() );
     }
 
+    //! Destroys the application object.
     GCoreApplication::~GCoreApplication()
     {
         this->moveToThread( nullptr );
@@ -56,11 +58,13 @@ namespace QtLikeSignal
         s_instance = nullptr;
     }
 
+    //! Returns the global application instance. Thread-safe.
     GCoreApplication* GCoreApplication::instance()
     {
         return s_instance;
     }
 
+    //! Enters the main event loop and waits until quit() is called. Returns the exit code.
     int GCoreApplication::exec()
     {
         m_exiting.store( false );
@@ -74,6 +78,7 @@ namespace QtLikeSignal
         return 0;
     }
 
+    //! Tells the application to exit with return code 0. Thread-safe.
     void GCoreApplication::quit()
     {
         m_exiting.store( true );

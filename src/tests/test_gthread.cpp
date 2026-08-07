@@ -10,9 +10,7 @@
 
 using namespace QtLikeSignal;
 
-/**
- * @brief Custom GThread subclass for testing thread execution.
- */
+//! Custom GThread subclass for testing thread execution.
 class CustomTestThread : public GThread
 {
 protected:
@@ -23,10 +21,7 @@ protected:
     }
 
 public:
-    /**
-     * @brief Checks if run() executed.
-     * @return True if run() completed.
-     */
+    //! Checks if run() executed. Returns true if run() completed.
     bool wasExecuted() const
     {
         return m_executed;
@@ -36,9 +31,7 @@ private:
     bool m_executed { false };
 };
 
-/**
- * @brief Thread subclass for testing GThread::currentThread() pointer.
- */
+//! Thread subclass for testing GThread::currentThread() pointer.
 class ThreadPointerCheckThread : public GThread
 {
 protected:
@@ -48,10 +41,7 @@ protected:
     }
 
 public:
-    /**
-     * @brief Gets the captured currentThread pointer.
-     * @return Captured thread pointer.
-     */
+    //! Gets the captured currentThread pointer. Returns the captured thread pointer.
     GThread* selfPointer() const
     {
         return m_selfPointer;
@@ -61,9 +51,7 @@ private:
     GThread* m_selfPointer { nullptr };
 };
 
-/**
- * @brief Thread subclass for testing exit code signaling.
- */
+//! Thread subclass for testing exit code signaling.
 class ExitCodeTestThread : public GThread
 {
 protected:
@@ -74,9 +62,7 @@ protected:
 
 };
 
-/**
- * @brief Thread subclass for testing wait timeout logic.
- */
+//! Thread subclass for testing wait timeout logic.
 class SlowTestThread : public GThread
 {
 protected:
@@ -87,12 +73,9 @@ protected:
 
 };
 
-/**
- * @brief Tests thread lifecycle methods and lifecycle signals.
- *
- * Verifies GThread::start(), GThread::wait(), GThread::isRunning(), GThread::isFinished(),
- * and emission of GThread::started and GThread::finished signals.
- */
+//! Tests thread lifecycle methods and lifecycle signals. Verifies GThread::start(),
+//! GThread::wait(), GThread::isRunning(), GThread::isFinished(), and emission of
+//! GThread::started and GThread::finished signals.
 TEST( GThreadTest, LifecycleAndSignals )
 {
     CustomTestThread thread;
@@ -125,12 +108,8 @@ TEST( GThreadTest, LifecycleAndSignals )
     EXPECT_TRUE( finishedFired );
 }
 
-/**
- * @brief Tests static thread factory creation.
- *
- * Verifies static function GThread::create() instantiates, starts, and executes a functor on a new
- * thread.
- */
+//! Tests static thread factory creation. Verifies static function GThread::create()
+//! instantiates, starts, and executes a functor on a new thread.
 TEST( GThreadTest, CreateStaticFactory )
 {
     bool funcExecuted = false;
@@ -144,12 +123,9 @@ TEST( GThreadTest, CreateStaticFactory )
     delete threadObj;
 }
 
-/**
- * @brief Tests retrieval of current thread pointer.
- *
- * Verifies static function GThread::currentThread() returns the pointer to the active GThread
- * instance inside its execution context.
- */
+//! Tests retrieval of current thread pointer. Verifies static function
+//! GThread::currentThread() returns the pointer to the active GThread instance inside its
+//! execution context.
 TEST( GThreadTest, CurrentThreadPointer )
 {
     ThreadPointerCheckThread thread;
@@ -159,11 +135,8 @@ TEST( GThreadTest, CurrentThreadPointer )
     EXPECT_EQ( thread.selfPointer(), &thread );
 }
 
-/**
- * @brief Tests thread exit signal and completion status.
- *
- * Verifies GThread::exit() requests thread termination and transitions GThread to finished state.
- */
+//! Tests thread exit signal and completion status. Verifies GThread::exit() requests thread
+//! termination and transitions GThread to finished state.
 TEST( GThreadTest, ThreadExitAndReturnCode )
 {
     ExitCodeTestThread thread;
@@ -172,12 +145,8 @@ TEST( GThreadTest, ThreadExitAndReturnCode )
     EXPECT_TRUE( thread.isFinished() );
 }
 
-/**
- * @brief Tests timed waiting on thread execution.
- *
- * Verifies GThread::wait(ms) returns false when thread execution exceeds timeout, and true once
- * finished.
- */
+//! Tests timed waiting on thread execution. Verifies GThread::wait(ms) returns false when
+//! thread execution exceeds timeout, and true once finished.
 TEST( GThreadTest, WaitTimeout )
 {
     SlowTestThread thread;
@@ -192,12 +161,8 @@ TEST( GThreadTest, WaitTimeout )
     EXPECT_TRUE( thread.isFinished() );
 }
 
-/**
- * @brief Tests concurrent multi-thread execution.
- *
- * Verifies launching multiple GThread instances in parallel, joining each via GThread::wait(), and
- * ensuring thread safety.
- */
+//! Tests concurrent multi-thread execution. Verifies launching multiple GThread instances in
+//! parallel, joining each via GThread::wait(), and ensuring thread safety.
 TEST( GThreadTest, MultipleThreadsExecution )
 {
     constexpr int count = 5;
@@ -224,16 +189,13 @@ TEST( GThreadTest, MultipleThreadsExecution )
     EXPECT_EQ( completedCount.load(), count );
 }
 
-/**
- * @brief Tests event dispatcher lifetime across a thread's own start/finish cycle.
- *
- * Replaces the former EventDispatcherSetAndGet test, which drove the removed
- * GThread::setEventDispatcher(). That setter could delete a dispatcher a running
- * exec()/processEvents() loop was still calling into, so a thread now creates and owns its
- * dispatcher itself and eventDispatcher() is read-only. This verifies that contract: none before
- * start(), one owned while running, and cleaned up on exit (the last part relies on
- * AddressSanitizer/LeakSanitizer in the debug build to catch a leak or double free).
- */
+//! Tests event dispatcher lifetime across a thread's own start/finish cycle. Replaces the
+//! former EventDispatcherSetAndGet test, which drove the removed GThread::setEventDispatcher().
+//! That setter could delete a dispatcher a running exec()/processEvents() loop was still calling
+//! into, so a thread now creates and owns its dispatcher itself and eventDispatcher() is
+//! read-only. This verifies that contract: none before start(), one owned while running, and
+//! cleaned up on exit (the last part relies on AddressSanitizer/LeakSanitizer in the debug build
+//! to catch a leak or double free).
 TEST( GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle )
 {
     GThread thread;
@@ -252,9 +214,7 @@ TEST( GThreadTest, EventDispatcherOwnedAcrossThreadLifecycle )
     EXPECT_TRUE( thread.isFinished() );
 }
 
-/**
- * @brief Tests GThread::post() runs the task on the target thread, from another thread.
- */
+//! Tests GThread::post() runs the task on the target thread, from another thread.
 TEST( GThreadTest, PostRunsTaskOnTargetThread )
 {
     GThread worker;
@@ -280,13 +240,10 @@ TEST( GThreadTest, PostRunsTaskOnTargetThread )
     worker.wait();
 }
 
-/**
- * @brief Tests GThread::post() always defers, even when called from the target thread itself.
- *
- * Regression coverage for the reason post() explicitly requests G::QueuedConnection rather than
- * G::AutoConnection: Auto would resolve to a same-thread direct call and run the task inline,
- * before post() returns, instead of on a later loop iteration.
- */
+//! Tests GThread::post() always defers, even when called from the target thread itself.
+//! Regression coverage for the reason post() explicitly requests G::QueuedConnection rather
+//! than G::AutoConnection: Auto would resolve to a same-thread direct call and run the task
+//! inline, before post() returns, instead of on a later loop iteration.
 TEST( GThreadTest, PostFromOwnThreadStillDefers )
 {
     GThread worker;
@@ -323,9 +280,7 @@ TEST( GThreadTest, PostFromOwnThreadStillDefers )
     worker.wait();
 }
 
-/**
- * @brief Tests GThread::post() reports failure and drops the task when there is no dispatcher.
- */
+//! Tests GThread::post() reports failure and drops the task when there is no dispatcher.
 TEST( GThreadTest, PostBeforeStartFails )
 {
     GThread thread;
@@ -338,9 +293,7 @@ TEST( GThreadTest, PostBeforeStartFails )
     EXPECT_FALSE( ran );
 }
 
-/**
- * @brief Tests GThread::post() rejects an empty std::function without touching the dispatcher.
- */
+//! Tests GThread::post() rejects an empty std::function without touching the dispatcher.
 TEST( GThreadTest, PostRejectsEmptyTask )
 {
     GThread worker;

@@ -10,18 +10,17 @@
 
 namespace QtLikeSignal
 {
+    //! One pending deferred call: the invoker to run, guarded by its own mutex.
     struct CallLaterNode
     {
         std::mutex mutex;
         std::function<void()> invoker;
     };
 
-    /**
-     * @brief Process-wide registry of callLater invocations still waiting to run.
-     *
-     * Exists as a friend of GObject purely so it can name GObject's private GCallLaterKey /
-     * GCallLaterKeyHash types; a plain file-scope map could not. Not declared in any header.
-     */
+    //! Process-wide registry of callLater invocations still waiting to run.
+    //!
+    //! Exists as a friend of GObject purely so it can name GObject's private GCallLaterKey /
+    //! GCallLaterKeyHash types; a plain file-scope map could not. Not declared in any header.
     struct GCallLaterRegistry
     {
         static std::mutex mutex;
@@ -39,6 +38,7 @@ namespace QtLikeSignal
 
     std::atomic<int> GObject::s_nextTimerId { 1 };
 
+    //! Constructs an object.
     GObject::GObject()
         : m_life( std::make_shared<int>( 0 ) )
     {
@@ -52,6 +52,7 @@ namespace QtLikeSignal
         }
     }
 
+    //! Destroys the object and triggers all registered cleanup callbacks.
     GObject::~GObject()
     {
         // Invalidate the life token first. connect()/callLater() wrappers running on other threads
@@ -106,11 +107,12 @@ namespace QtLikeSignal
         }
     }
 
+    //! Internal helper to schedule or update a callLater deferred invocation.
     void GObject::scheduleCallLater
         (
-        GObject* context,
-        const GCallLaterKey& key,
-        std::function<void()> invoker
+        GObject* context,               //!< Target context object.
+        const GCallLaterKey& key,       //!< Key identifying the deferred call.
+        std::function<void()> invoker   //!< Callback executing the call.
         )
     {
         if( !context )
@@ -180,20 +182,40 @@ namespace QtLikeSignal
         }
     }
 
+    //! Gets the thread affinity of this object. Thread-safe.
     GThread* GObject::thread() const
     {
         return m_thread.load();
     }
 
+    //! Gets the thread data container holding this object's event dispatcher.
+    //!
+    //! Private: this is internal plumbing with no QObject equivalent -- Qt's
+    //! QObjectPrivate::threadData is likewise not public API. It is the handle through which the
+    //! dispatcher is reached, so exposing it hands out the machinery every other access-control
+    //! decision in this class exists to protect. Returns nullptr if this object has no affinity.
+    //! Thread-safe.
     std::shared_ptr<GThreadData> GObject::threadData() const
     {
         std::lock_guard<std::mutex> lock( m_threadDataMutex );
         return m_threadData;
     }
 
+    //! Changes the thread affinity of this object.
+    //!
+    //! **Not thread-safe: must be called from this object's own thread**, matching Qt's
+    //! QObject::moveToThread() ("Current thread is not the object's thread. Cannot move to target
+    //! thread"). Only the thread that currently owns an object may hand it to another; letting any
+    //! thread re-home an object at will would race the owner's own use of it.
+    //!
+    //! Qt's one exception is reproduced: an object with *no* thread affinity yet may be adopted by
+    //! the calling thread. That is what lets a freshly constructed object be moved onto a worker,
+    //! and what lets GThread adopt itself when its run loop starts. Returns true if the object now
+    //! lives in the requested thread (including when it already did); false if the move was
+    //! refused, in which case the affinity is unchanged.
     bool GObject::moveToThread
         (
-        GThread* thread
+        GThread* thread  //!< The new thread this object will live in; nullptr clears the affinity.
         )
     {
         GThread* const currentAffinity = m_thread.load();
@@ -279,21 +301,24 @@ namespace QtLikeSignal
         return true;
     }
 
+    //! Gets the object's descriptive name. Thread-safe.
     std::string GObject::objectName() const
     {
         std::lock_guard<std::mutex> lock( m_nameMutex );
         return m_objectName;
     }
 
+    //! Sets the object's descriptive name. Thread-safe.
     void GObject::setObjectName
         (
-        const std::string& name
+        const std::string& name  //!< The new object name.
         )
     {
         std::lock_guard<std::mutex> lock( m_nameMutex );
         m_objectName = name;
     }
 
+    //! Schedules this object for deletion in the event loop. Thread-safe.
     void GObject::deleteLater()
     {
         auto* event = new GDeferredDeleteEvent();
@@ -309,9 +334,15 @@ namespace QtLikeSignal
         delete this;
     }
 
+    //! Internal event dispatch plumbing; routes an event to its handler.
+    //!
+    //! Deliberately private and non-virtual: this is not an extension point. The event queue is
+    //! the sole caller (see the friend declaration in the header), and the set of event types is
+    //! closed. Override timerEvent() instead to react to timers. Returns true if the event was
+    //! recognized and handled.
     bool GObject::event
         (
-        GEvent* event
+        GEvent* event  //!< The event to handle.
         )
     {
         if( !event )
@@ -341,17 +372,27 @@ namespace QtLikeSignal
         }
     }
 
+    //! Handles timer events sent to this object.
     void GObject::timerEvent
         (
-        GTimerEvent* event
+        GTimerEvent* event  //!< The timer event containing the timer ID.
         )
     {
         ( void )event;
     }
 
+    //! Starts a timer for this object with the specified interval.
+    //!
+    //! **Not thread-safe: must be called from this object's own thread.** Timers are owned by the
+    //! dispatcher of the thread the object lives in, and only that thread's event loop can deliver
+    //! the resulting timerEvent(). Calling from any other thread is rejected with a warning on
+    //! stderr and returns -1, matching Qt, whose QObject::startTimer() likewise refuses
+    //! ("Timers cannot be started from another thread"). To start a timer for an object living in
+    //! another thread, get onto that thread first -- for example with callLater(). Returns the
+    //! unique timer ID, or -1 if the timer could not be started.
     int GObject::startTimer
         (
-        int interval
+        int interval  //!< Interval in milliseconds.
         )
     {
         // Thread-confined, as in Qt. The timer lives in the dispatcher belonging to this object's
@@ -383,9 +424,13 @@ namespace QtLikeSignal
         return -1;
     }
 
+    //! Kills the timer with the specified ID.
+    //!
+    //! **Not thread-safe: must be called from this object's own thread**, for the same reason as
+    //! startTimer(). Calls from another thread are rejected with a warning and do nothing.
     void GObject::killTimer
         (
-        int id
+        int id  //!< The timer ID to stop.
         )
     {
         // Thread-confined for the same reason as startTimer().
@@ -406,20 +451,26 @@ namespace QtLikeSignal
         }
     }
 
+    //! Registers a callback to be executed when this object is destroyed. Thread-safe.
     void GObject::addCleanupCallback
         (
-        std::function<void()> callback
+        std::function<void()> callback  //!< The function to execute upon destruction.
         )
     {
         std::lock_guard<std::mutex> lock( m_cleanupMutex );
         m_cleanupCallbacks.push_back( std::move( callback ) );
     }
 
+    //! Dispatches a metacall callback to the target object's event loop based on connection type.
+    //! Thread-safe. Returns true if the slot ran (direct) or was queued successfully; false if it
+    //! could not be delivered at all, which happens when the target has no thread affinity or its
+    //! thread has no event dispatcher yet. Callers that track pending state must undo it when this
+    //! returns false.
     bool GObject::dispatchMetaCall
         (
-        GObject* target,
-        std::function<void()> slot,
-        G::ConnectionType type
+        GObject* target,               //!< Target GObject.
+        std::function<void()> slot,    //!< Callback function.
+        G::ConnectionType type         //!< Connection type.
         )
     {
         if( !target )

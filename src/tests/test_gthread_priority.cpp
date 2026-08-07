@@ -12,29 +12,24 @@
 
 using namespace QtLikeSignal;
 
-/**
- * @brief A thread that stays in its event loop until told to quit.
- *
- * Priority can only be set on a running thread, so every test here needs one that is reliably
- * alive while the call is made. Using the default run()/exec() gives that without a sleep-based
- * guess: the thread sits in the loop until quit() lands.
- */
+//! A thread that stays in its event loop until told to quit.
+//!
+//! Priority can only be set on a running thread, so every test here needs one that is reliably
+//! alive while the call is made. Using the default run()/exec() gives that without a sleep-based
+//! guess: the thread sits in the loop until quit() lands.
 class PriorityTestThread : public GThread
 {
 public:
-    /**
-     * @brief Blocks until the thread's event loop is up and able to accept work.
-     *
-     * Deliberately stronger than isRunning() alone. start() sets the running flag on the CALLING
-     * thread before the new thread has executed anything, so isRunning() can be true while the
-     * worker has not yet created its dispatcher -- and post() rejects work until it has. Waiting
-     * on the dispatcher as well is what makes that window impossible to land in.
-     * @param timeoutMs How long to wait before giving up.
-     * @return True if the thread is running and has a dispatcher within the timeout.
-     */
+    //! Blocks until the thread's event loop is up and able to accept work. Returns true if the
+    //! thread is running and has a dispatcher within the timeout.
+    //!
+    //! Deliberately stronger than isRunning() alone. start() sets the running flag on the CALLING
+    //! thread before the new thread has executed anything, so isRunning() can be true while the
+    //! worker has not yet created its dispatcher -- and post() rejects work until it has. Waiting
+    //! on the dispatcher as well is what makes that window impossible to land in.
     bool waitUntilRunning
         (
-        int timeoutMs = 5000
+        int timeoutMs = 5000  //!< How long to wait before giving up.
         )
     {
         const auto deadline = std::chrono::steady_clock::now()
@@ -52,21 +47,17 @@ public:
 
 };
 
-/**
- * @brief A thread that is not running reports InheritPriority.
- */
+//! A thread that is not running reports InheritPriority.
 TEST( GThreadPriority, ReportsInheritPriorityBeforeStart )
 {
     PriorityTestThread thread;
     EXPECT_EQ( thread.priority(), GThread::InheritPriority );
 }
 
-/**
- * @brief setPriority() before start() is refused and leaves the reported priority alone.
- *
- * This is Qt's contract and the surprising half of it: the value is not remembered for the
- * upcoming run, so the thread starts at InheritPriority regardless.
- */
+//! setPriority() before start() is refused and leaves the reported priority alone.
+//!
+//! This is Qt's contract and the surprising half of it: the value is not remembered for the
+//! upcoming run, so the thread starts at InheritPriority regardless.
 TEST( GThreadPriority, SetBeforeStartIsRefused )
 {
     PriorityTestThread thread;
@@ -82,9 +73,7 @@ TEST( GThreadPriority, SetBeforeStartIsRefused )
     thread.wait();
 }
 
-/**
- * @brief Every settable priority round-trips through the getter on a running thread.
- */
+//! Every settable priority round-trips through the getter on a running thread.
 TEST( GThreadPriority, SetAndGetOnRunningThread )
 {
     const GThread::Priority priorities[] =
@@ -112,9 +101,7 @@ TEST( GThreadPriority, SetAndGetOnRunningThread )
     thread.wait();
 }
 
-/**
- * @brief InheritPriority is rejected by the setter and does not disturb the current value.
- */
+//! InheritPriority is rejected by the setter and does not disturb the current value.
 TEST( GThreadPriority, InheritPriorityIsRejected )
 {
     PriorityTestThread thread;
@@ -132,9 +119,7 @@ TEST( GThreadPriority, InheritPriorityIsRejected )
     thread.wait();
 }
 
-/**
- * @brief Once the thread has finished, the priority reverts to InheritPriority.
- */
+//! Once the thread has finished, the priority reverts to InheritPriority.
 TEST( GThreadPriority, ReportsInheritPriorityAfterFinish )
 {
     PriorityTestThread thread;
@@ -149,9 +134,7 @@ TEST( GThreadPriority, ReportsInheritPriorityAfterFinish )
     EXPECT_EQ( thread.priority(), GThread::InheritPriority );
 }
 
-/**
- * @brief A second run does not inherit the priority set on the first.
- */
+//! A second run does not inherit the priority set on the first.
 TEST( GThreadPriority, RestartResetsToInheritPriority )
 {
     PriorityTestThread thread;
@@ -171,9 +154,7 @@ TEST( GThreadPriority, RestartResetsToInheritPriority )
     thread.wait();
 }
 
-/**
- * @brief start( Priority ) gives the thread its priority without a separate setter call.
- */
+//! start( Priority ) gives the thread its priority without a separate setter call.
 TEST( GThreadPriority, StartWithPriorityIsReported )
 {
     PriorityTestThread thread;
@@ -186,9 +167,7 @@ TEST( GThreadPriority, StartWithPriorityIsReported )
     thread.wait();
 }
 
-/**
- * @brief start() with no argument still means InheritPriority, as it always did.
- */
+//! start() with no argument still means InheritPriority, as it always did.
 TEST( GThreadPriority, StartWithoutArgumentInherits )
 {
     PriorityTestThread thread;
@@ -201,13 +180,11 @@ TEST( GThreadPriority, StartWithoutArgumentInherits )
     thread.wait();
 }
 
-/**
- * @brief The priority is in effect before run() begins, not merely by the time start() returns.
- *
- * This is the point of applying it from inside the new thread. Overriding run() to sample the
- * priority as its first statement is the only way to observe the ordering the documentation
- * promises; checking after the fact would pass even if the priority arrived late.
- */
+//! The priority is in effect before run() begins, not merely by the time start() returns.
+//!
+//! This is the point of applying it from inside the new thread. Overriding run() to sample the
+//! priority as its first statement is the only way to observe the ordering the documentation
+//! promises; checking after the fact would pass even if the priority arrived late.
 TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
 {
     class SamplingThread : public GThread
@@ -242,9 +219,7 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
     thread.wait();
 }
 
-/**
- * @brief A restart with no argument clears a priority the previous run was started with.
- */
+//! A restart with no argument clears a priority the previous run was started with.
 TEST( GThreadPriority, RestartWithoutPriorityClearsPrevious )
 {
     PriorityTestThread thread;
@@ -262,14 +237,12 @@ TEST( GThreadPriority, RestartWithoutPriorityClearsPrevious )
     thread.wait();
 }
 
-/**
- * @brief setPriority() racing the thread's own exit must not crash or touch a dead handle.
- *
- * The interesting window is between the run body finishing and the OS thread being joined. This
- * hammers setPriority() from another thread while the target quits underneath it, which is the
- * case m_priorityMutex exists to make safe. Under a sanitizer build this is the test that would
- * catch a use-after-exit on the native handle.
- */
+//! setPriority() racing the thread's own exit must not crash or touch a dead handle.
+//!
+//! The interesting window is between the run body finishing and the OS thread being joined. This
+//! hammers setPriority() from another thread while the target quits underneath it, which is the
+//! case m_priorityMutex exists to make safe. Under a sanitizer build this is the test that would
+//! catch a use-after-exit on the native handle.
 TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
 {
     for( int round = 0; round < 20; ++round )
@@ -299,9 +272,7 @@ TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
     }
 }
 
-/**
- * @brief Concurrent setters from many threads leave a coherent value behind.
- */
+//! Concurrent setters from many threads leave a coherent value behind.
 TEST( GThreadPriority, ConcurrentSettersAreSerialised )
 {
     PriorityTestThread thread;
@@ -335,14 +306,12 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
 
 #if defined( _WIN32 )
 
-    /**
-     * @brief On Windows the request actually reaches the OS thread.
-     *
-     * Windows honours all seven levels, so the mapping can be checked for real rather than only
-     * through our own getter. There is no equivalent assertion on Linux: the default SCHED_OTHER
-     * policy reports a single-value priority range, so every level maps to the same number and
-     * nothing observable changes.
-     */
+    //! On Windows the request actually reaches the OS thread.
+    //!
+    //! Windows honours all seven levels, so the mapping can be checked for real rather than only
+    //! through our own getter. There is no equivalent assertion on Linux: the default SCHED_OTHER
+    //! policy reports a single-value priority range, so every level maps to the same number and
+    //! nothing observable changes.
     TEST( GThreadPriority, WindowsAppliesPriorityToOsThread )
     {
         struct Expectation
@@ -392,9 +361,7 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
         thread.wait();
     }
 
-    /**
-     * @brief A priority passed to start() reaches the OS thread, not just our own bookkeeping.
-     */
+    //! A priority passed to start() reaches the OS thread, not just our own bookkeeping.
     TEST( GThreadPriority, WindowsStartWithPriorityAppliesToOsThread )
     {
         PriorityTestThread thread;

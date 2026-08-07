@@ -2,11 +2,13 @@
 
 namespace QtLikeSignal
 {
+    //! Constructs a timer.
     GTimer::GTimer()
         : GObject()
     {
     }
 
+    //! Destroys the timer.
     GTimer::~GTimer()
     {
         // Matches QTimer::~QTimer(), which likewise stops a still-running timer. Note the consequence
@@ -20,51 +22,61 @@ namespace QtLikeSignal
         }
     }
 
+    //! Gets the timer interval in milliseconds.
     int GTimer::interval() const
     {
         return m_interval;
     }
 
+    //! Sets the timer interval in milliseconds.
     void GTimer::setInterval
         (
-        int msec
+        int msec  //!< Interval in milliseconds.
         )
     {
         m_interval = msec;
     }
 
+    //! Checks if the timer is currently active (running).
     bool GTimer::isActive() const
     {
         return m_active;
     }
 
+    //! Checks if the timer is single-shot.
     bool GTimer::isSingleShot() const
     {
         return m_singleShot;
     }
 
+    //! Sets whether the timer is single-shot.
     void GTimer::setSingleShot
         (
-        bool singleShot
+        bool singleShot  //!< True for single-shot, false for periodic.
         )
     {
         m_singleShot = singleShot;
     }
 
+    //! Gets the unique ID of the internal timer, or -1 if inactive.
     int GTimer::timerId() const
     {
         return m_timerId;
     }
 
+    //! Starts or restarts the timer with specified interval in milliseconds.
     void GTimer::start
         (
-        int msec
+        int msec  //!< Interval in milliseconds.
         )
     {
         m_interval = msec;
         start();
     }
 
+    //! Starts or restarts the timer using the existing interval.
+    //!
+    //! **Must be called from this timer's own thread**; see start(int).
     void GTimer::start()
     {
         stop();
@@ -72,6 +84,10 @@ namespace QtLikeSignal
         m_active = ( m_timerId != -1 );
     }
 
+    //! Stops the timer.
+    //!
+    //! **Must be called from this timer's own thread**, because it goes through
+    //! GObject::killTimer(). Calling it from elsewhere warns and leaves the timer running.
     void GTimer::stop()
     {
         if( m_active && m_timerId != -1 )
@@ -82,9 +98,10 @@ namespace QtLikeSignal
         }
     }
 
+    //! Internal timer event handler.
     void GTimer::timerEvent
         (
-        GTimerEvent* event
+        GTimerEvent* event  //!< Timer event.
         )
     {
         if( !event || event->timerId() != m_timerId )

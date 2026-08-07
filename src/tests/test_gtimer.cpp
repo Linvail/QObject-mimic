@@ -10,34 +10,24 @@
 
 using namespace QtLikeSignal;
 
-/**
- * @brief Helper test receiver class for verifying GTimer singleShot member function invocations.
- */
+//! Helper test receiver class for verifying GTimer singleShot member function invocations.
 class GTimerTestReceiver : public GObject
 {
 public:
-    /**
-     * @brief Slot called when timer expires.
-     */
+    //! Slot called when timer expires.
     void onTimeout()
     {
         m_fired = true;
         m_fireCount++;
     }
 
-    /**
-     * @brief Checks if slot was called.
-     * @return True if fired.
-     */
+    //! Checks if slot was called. Returns true if fired.
     bool wasFired() const
     {
         return m_fired;
     }
 
-    /**
-     * @brief Gets total fire count.
-     * @return Fire count.
-     */
+    //! Gets total fire count. Returns the fire count.
     int fireCount() const
     {
         return m_fireCount;
@@ -49,19 +39,14 @@ private:
     std::atomic<int>  m_fireCount { 0 };
 };
 
-/**
- * @brief Test timer subclass to verify manual event handling.
- */
+//! Test timer subclass to verify manual event handling.
 class ManualTestTimer : public GTimer
 {
 public:
-    /**
-     * @brief Invokes protected timerEvent for test verification.
-     * @param ev Timer event.
-     */
+    //! Invokes protected timerEvent for test verification.
     void triggerTimerEvent
         (
-        GTimerEvent* ev
+        GTimerEvent* ev  //!< Timer event.
         )
     {
         timerEvent( ev );
@@ -69,12 +54,10 @@ public:
 
 };
 
-/**
- * @brief Tests GTimer configuration and property accessors.
- *
- * Verifies GTimer::setInterval(), GTimer::interval(), GTimer::setSingleShot(),
- * GTimer::isSingleShot(), GTimer::isActive(), and GTimer::timerId() initial states.
- */
+//! Tests GTimer configuration and property accessors.
+//!
+//! Verifies GTimer::setInterval(), GTimer::interval(), GTimer::setSingleShot(),
+//! GTimer::isSingleShot(), GTimer::isActive(), and GTimer::timerId() initial states.
 TEST( GTimerTest, ConfigurationAndProperties )
 {
     GTimer timer;
@@ -87,12 +70,10 @@ TEST( GTimerTest, ConfigurationAndProperties )
     EXPECT_EQ( timer.timerId(), -1 );
 }
 
-/**
- * @brief Tests GTimer start and stop lifecycle.
- *
- * Verifies GTimer::start(ms), GTimer::stop(), GTimer::isActive(), and GTimer::timerId() state
- * transitions.
- */
+//! Tests GTimer start and stop lifecycle.
+//!
+//! Verifies GTimer::start(ms), GTimer::stop(), GTimer::isActive(), and GTimer::timerId() state
+//! transitions.
 TEST( GTimerTest, StartAndStop )
 {
     GThread* thread = GThread::create(
@@ -117,13 +98,10 @@ TEST( GTimerTest, StartAndStop )
     delete thread;
 }
 
-/**
- * @brief Starts a worker thread running an event loop and blocks until its dispatcher exists.
- * @param thread The thread to start.
- */
+//! Starts a worker thread running an event loop and blocks until its dispatcher exists.
 static void startWorkerAndWaitForDispatcher
     (
-    GThread& thread
+    GThread& thread  //!< The thread to start.
     )
 {
     thread.start();
@@ -133,19 +111,16 @@ static void startWorkerAndWaitForDispatcher
     }
 }
 
-/**
- * @brief Blocks until a queued slot has run on the context object's thread.
- *
- * Used before quitting a worker so that anything already sitting in its queue is processed first
- * -- in particular a single-shot helper's own deleteLater(), which the helper posts immediately
- * after invoking its functor. Quitting without this can stop the loop while that delete is still
- * queued, and the object leaks: the dispatcher's destructor frees the pending event but has no
- * way to delete its receiver. ASan/LSan reports it, so the tests must not race it.
- * @param context Object whose thread's event loop should be drained.
- */
+//! Blocks until a queued slot has run on the context object's thread.
+//!
+//! Used before quitting a worker so that anything already sitting in its queue is processed first
+//! -- in particular a single-shot helper's own deleteLater(), which the helper posts immediately
+//! after invoking its functor. Quitting without this can stop the loop while that delete is still
+//! queued, and the object leaks: the dispatcher's destructor frees the pending event but has no
+//! way to delete its receiver. ASan/LSan reports it, so the tests must not race it.
 static void drainQueuedEvents
     (
-    GObject& context
+    GObject& context  //!< Object whose thread's event loop should be drained.
     )
 {
     std::promise<void> syncPromise;
@@ -164,16 +139,14 @@ static void drainQueuedEvents
         << "worker event loop did not drain.";
 }
 
-/**
- * @brief Tests static GTimer::singleShot overload for standalone functors.
- *
- * Verifies GTimer::singleShot(int, Functor) actually runs the functor. The call is made from
- * inside a queued slot so it executes on a thread that both owns a dispatcher and is running an
- * event loop -- the helper object registers its timer against the calling thread, so invoking
- * this from a thread without a running loop (as this test previously did from the main thread of
- * a binary with no GCoreApplication) silently does nothing: startTimer() returns -1 and the
- * helper is destroyed immediately.
- */
+//! Tests static GTimer::singleShot overload for standalone functors.
+//!
+//! Verifies GTimer::singleShot(int, Functor) actually runs the functor. The call is made from
+//! inside a queued slot so it executes on a thread that both owns a dispatcher and is running an
+//! event loop -- the helper object registers its timer against the calling thread, so invoking
+//! this from a thread without a running loop (as this test previously did from the main thread of
+//! a binary with no GCoreApplication) silently does nothing: startTimer() returns -1 and the
+//! helper is destroyed immediately.
 TEST( GTimerTest, SingleShotStaticLambdaFires )
 {
     GThread worker;
@@ -207,12 +180,10 @@ TEST( GTimerTest, SingleShotStaticLambdaFires )
     worker.wait();
 }
 
-/**
- * @brief Tests static GTimer::singleShot overload with target GObject context.
- *
- * Verifies GTimer::singleShot(int, const GObject*, Functor) runs the functor on the context
- * object's thread, and that a null context is handled safely.
- */
+//! Tests static GTimer::singleShot overload with target GObject context.
+//!
+//! Verifies GTimer::singleShot(int, const GObject*, Functor) runs the functor on the context
+//! object's thread, and that a null context is handled safely.
 TEST( GTimerTest, SingleShotStaticWithContextFires )
 {
     GThread worker;
@@ -246,12 +217,10 @@ TEST( GTimerTest, SingleShotStaticWithContextFires )
     worker.wait();
 }
 
-/**
- * @brief Tests static GTimer::singleShot overload with receiver object member function.
- *
- * Verifies GTimer::singleShot(int, const Receiver*, MemberFunc) invokes the member function, and
- * that a null receiver is handled safely.
- */
+//! Tests static GTimer::singleShot overload with receiver object member function.
+//!
+//! Verifies GTimer::singleShot(int, const Receiver*, MemberFunc) invokes the member function, and
+//! that a null receiver is handled safely.
 TEST( GTimerTest, SingleShotStaticWithReceiverFires )
 {
     GThread worker;
@@ -281,12 +250,10 @@ TEST( GTimerTest, SingleShotStaticWithReceiverFires )
     EXPECT_EQ( receiver.fireCount(), 1 ) << "the single-shot fired more than once.";
 }
 
-/**
- * @brief Tests timer event handling and timeout signal emission.
- *
- * Verifies GTimer::timerEvent() processes matching GTimerEvent IDs and emits the GTimer::timeout
- * signal.
- */
+//! Tests timer event handling and timeout signal emission.
+//!
+//! Verifies GTimer::timerEvent() processes matching GTimerEvent IDs and emits the GTimer::timeout
+//! signal.
 TEST( GTimerTest, ManualTimerEventTriggering )
 {
     GThread* thread = GThread::create(
