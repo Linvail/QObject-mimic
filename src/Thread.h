@@ -10,7 +10,14 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
+
+#if !defined( _WIN32 )
+    // For pthread_t only. Included here rather than hidden behind an opaque handle because this
+    // is a source-only library with no ABI to protect, and a real pthread_t is honest about what
+    // the member is. The Windows handle is a void* instead, purely to keep <windows.h> -- and its
+    // macros -- out of every translation unit that includes this header.
+    #include <pthread.h>
+#endif
 
 namespace QtLikeSignal
 {
@@ -53,6 +60,8 @@ namespace QtLikeSignal
             (
             Priority aPriority = InheritPriority
             );
+
+        void startPlatformSpecific();
 
         void quit();
 
@@ -117,7 +126,45 @@ namespace QtLikeSignal
             Priority aPriority
             );
 
-        std::unique_ptr<std::thread> mThread;      //!< The underlying OS thread, once started.
+        void threadBody();
+
+        #if defined( _WIN32 )
+            static unsigned int __stdcall threadEntry
+                (
+                void* aArg
+                );
+
+        #else
+            static void* threadEntry
+                (
+                void* aArg
+                );
+
+        #endif
+
+        #if defined( _WIN32 )
+            //! The OS thread handle from _beginthreadex(), or nullptr when there is none to reap.
+            //!
+            //! Typed void* so this header does not pull in <windows.h>. Owned: closed by
+            //! whichever wait() sees the thread finish with no other waiter left inside the wait.
+            void* mHandle { nullptr };
+
+            //! How many calls are currently blocked inside WaitForSingleObject() on mHandle.
+            //!
+            //! Closing the handle out from under one of them would be a use-after-close, so the
+            //! last one out closes it. Guarded by mPriorityMutex.
+            int mWaiters { 0 };
+        #else
+            //! The OS thread from pthread_create(). Meaningful only while mJoinable.
+            pthread_t mThreadId {};
+
+            //! True while mThreadId names a thread that has been created and not yet joined.
+            //!
+            //! Joining twice is undefined, so this is what makes the join happen exactly once no
+            //! matter how many callers reach wait(). Guarded by mPriorityMutex.
+            bool mJoinable { false };
+        #endif
+
         std::shared_ptr<ThreadData> mData;        //!< This thread's dispatcher-holding data.
         std::atomic<bool> mRunning { false };      //!< True while the OS thread is executing.
         std::atomic<bool> mFinished { false };     //!< True once the OS thread has finished.
@@ -126,14 +173,25 @@ namespace QtLikeSignal
         mutable std::mutex mWaitMutex;             //!< Guards mWaitCv's predicate.
         std::condition_variable mWaitCv;           //!< Notified when the thread finishes, for wait().
 
-        //! Guards mPriority and every use of mThread's native handle.
+        //! Guards mPriority, the native handle members, and every use of that handle.
         //!
-        //! Not merely protecting the enum. The run body clears mRunning while holding this mutex, so
-        //! a setPriority() that has observed mRunning == true under the same lock is guaranteed the
-        //! OS thread has not yet reached the end of its body -- without that, the handle could be
-        //! touched after the thread had exited.
+        //! Not merely protecting the enum. The run body clears mRunning while holding this mutex,
+        //! so a setPriority() that has observed mRunning == true under the same lock is
+        //! guaranteed the OS thread has not yet reached the end of its body -- without that, the
+        //! handle could be touched after the thread had exited. start() holds it across thread
+        //! creation for the same reason in reverse: nobody may see mRunning == true before the
+        //! handle exists. It is never held across a blocking wait, so a waiter cannot keep the
+        //! finishing thread from taking it.
         mutable std::mutex mPriorityMutex;
         Priority mPriority { InheritPriority };  //!< Priority applied to the current/most recent run.
+
+        //! Set when the new thread has to apply its own priority instead of being born with it.
+        //!
+        //! Only ever true on UNIX, and only when the kernel refused the scheduling attributes
+        //! passed to pthread_create(); the thread then inherits the caller's priority and fixes
+        //! it up itself. Guarded by mPriorityMutex, which is also what makes the fix-up wait for
+        //! start() to publish the handle it needs.
+        bool mPriorityNeedsReset { false };
 
         static thread_local Thread* sCurrentThread;  //!< The Thread running on this OS thread, if any.
         friend class CoreApplication;

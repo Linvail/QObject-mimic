@@ -385,4 +385,65 @@ TEST( ThreadPriority, ConcurrentSettersAreSerialised )
         thread.wait();
     }
 
+    //! A thread that records what the OS says its priority is the instant run() is entered, then
+    //! returns.
+    class PriorityAtRunEntryThread : public Thread
+    {
+    public:
+        std::atomic<int> mPriorityAtRunEntry { THREAD_PRIORITY_ERROR_RETURN };
+
+    protected:
+        //! Samples the OS priority and returns immediately, without entering an event loop.
+        virtual void run() override
+        {
+            mPriorityAtRunEntry.store( GetThreadPriority( GetCurrentThread() ) );
+        }
+
+    };
+
+    //! The priority is already in force when run() begins, not applied from inside it.
+    //!
+    //! This is what creating the thread suspended buys, and it is the reason start() uses the OS
+    //! thread API directly. Sampling from inside run() is the earliest point this test can reach;
+    //! the sequence that would fail it -- thread created running at normal priority, priority
+    //! applied afterwards -- is exactly what a std::thread-backed start() is forced to do.
+    TEST( ThreadPriority, WindowsPriorityIsInForceBeforeRunBegins )
+    {
+        PriorityAtRunEntryThread thread;
+        thread.start( Thread::HighestPriority );
+
+        ASSERT_TRUE( thread.wait( 5000 ) );
+        EXPECT_EQ( thread.mPriorityAtRunEntry.load(), THREAD_PRIORITY_HIGHEST )
+            << "run() began before start()'s priority reached the OS thread";
+    }
+
+    //! InheritPriority means the creating thread's priority, and has to be made to happen.
+    //!
+    //! The OS hands every new thread NormalPriority regardless of who created it, so inheritance
+    //! is not the default it sounds like: start() has to read the creating thread's priority and
+    //! apply it. Qt does this too. Raising this test's own thread first is what makes the
+    //! difference between inheriting and defaulting visible at all.
+    TEST( ThreadPriority, WindowsInheritPriorityFollowsTheCreatingThread )
+    {
+        const HANDLE self = GetCurrentThread();
+        const int originalPriority = GetThreadPriority( self );
+        ASSERT_NE( originalPriority, THREAD_PRIORITY_ERROR_RETURN );
+        ASSERT_TRUE( SetThreadPriority( self, THREAD_PRIORITY_HIGHEST ) );
+
+        PriorityAtRunEntryThread thread;
+        thread.start();
+        const bool finished = thread.wait( 5000 );
+        const int reported = thread.mPriorityAtRunEntry.load();
+
+        // Put this thread back before asserting: a failed assertion returns from the test, and
+        // leaving the whole gtest main thread at HIGHEST would follow into every test after it.
+        SetThreadPriority( self, originalPriority );
+
+        ASSERT_TRUE( finished );
+        EXPECT_EQ( reported, THREAD_PRIORITY_HIGHEST )
+            << "the new thread did not inherit the creating thread's priority";
+        EXPECT_EQ( thread.priority(), Thread::InheritPriority )
+            << "an inherited priority is still reported as InheritPriority";
+    }
+
 #endif // _WIN32

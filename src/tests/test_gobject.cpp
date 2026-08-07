@@ -9,6 +9,7 @@
 #include <atomic>
 #include <string>
 #include <future>
+#include <thread>
 
 using namespace QtLikeSignal;
 

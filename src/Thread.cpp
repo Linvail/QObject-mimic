@@ -9,86 +9,9 @@
 
 #include <cstdio>
 
-#if defined( _WIN32 )
-    #include <windows.h>
-#else
-    #include <cerrno>
-    #include <pthread.h>
-    #include <sched.h>
-    #include <unistd.h>
-    // Priority scheduling is an optional part of POSIX. Where it is absent there is no portable
-    // way to ask for a priority at all, so setPriority() records the value and does nothing else,
-    // which is what Qt does behind its own QT_HAS_THREAD_PRIORITY_SCHEDULING guard.
-    #if defined( _POSIX_THREAD_PRIORITY_SCHEDULING )
-        #define G_HAS_THREAD_PRIORITY_SCHEDULING
-    #endif
-#endif
-
 namespace QtLikeSignal
 {
     thread_local Thread* Thread::sCurrentThread = nullptr;
-
-    #if !defined( _WIN32 ) && defined( G_HAS_THREAD_PRIORITY_SCHEDULING )
-
-        namespace
-        {
-
-            //! Maps a Thread priority onto a scheduler policy and priority number.
-            //!
-            //! This is Qt's mapping from qthread_unix.cpp, including its deliberately coarse scaling: the
-            //! divisor is TimeCriticalPriority rather than the span between the lowest and highest values, so
-            //! the enum lands on the low end of the platform's range rather than spreading across it. Kept as
-            //! Qt has it so behaviour matches; the alternative would be a library that claims to mimic QThread
-            //! and then schedules differently. Returns true if a priority could be calculated; false if the
-            //! platform would not report a range.
-            bool calculateUnixPriority
-                (
-                int aPriority,          //!< The Thread priority to convert.
-                int* aSchedPolicy,      //!< In: the thread's current policy. Out: the policy to apply, which
-                                        //!< only changes when IdlePriority selects SCHED_IDLE.
-                int* aSchedPriority     //!< Out: the priority number to apply under that policy.
-                )
-            {
-                #ifdef SCHED_IDLE
-                    if( aPriority == Thread::IdlePriority )
-                    {
-                        *aSchedPolicy = SCHED_IDLE;
-                        *aSchedPriority = 0;
-                        return true;
-                    }
-                    const int lowestPriority = Thread::LowestPriority;
-                #else
-                    const int lowestPriority = Thread::IdlePriority;
-                #endif
-                const int highestPriority = Thread::TimeCriticalPriority;
-
-                const int prioMin = sched_get_priority_min( *aSchedPolicy );
-                const int prioMax = sched_get_priority_max( *aSchedPolicy );
-                if( prioMin == -1 || prioMax == -1 )
-                {
-                    return false;
-                }
-
-                int prio = ( ( aPriority - lowestPriority ) * ( prioMax - prioMin ) /
-                    highestPriority
-                           ) +
-                    prioMin;
-                if( prio < prioMin )
-                {
-                    prio = prioMin;
-                }
-                if( prio > prioMax )
-                {
-                    prio = prioMax;
-                }
-
-                *aSchedPriority = prio;
-                return true;
-            }
-
-        } // namespace
-
-    #endif
 
     //! Constructs a new thread object.
     Thread::Thread()
@@ -106,16 +29,15 @@ namespace QtLikeSignal
 
     //! Starts execution of the thread by invoking run(). Thread-safe.
     //!
-    //! The new thread applies priority to itself as its first action, before started() is
-    //! emitted and before run() is entered, so the whole of run() executes at the requested
-    //! priority.
+    //! The thread is already at aPriority before it executes its first instruction, as in Qt: on
+    //! Windows it is created suspended, given the priority, then resumed; on UNIX the priority
+    //! travels in the pthread attributes handed to pthread_create(). Nothing runs at the wrong
+    //! priority, not even briefly.
     //!
-    //! It is not applied quite as early as Qt manages, and the difference is worth knowing if you
-    //! are relying on priority for correctness rather than tuning. Qt creates the thread suspended
-    //! on Windows, and passes the priority in pthread_attr_t on UNIX, so the thread never executes
-    //! a single instruction at the wrong priority. std::thread offers neither, so between the OS
-    //! creating the thread and the thread's first instruction it briefly runs at the creating
-    //! thread's priority. Nothing belonging to this class runs in that window.
+    //! The one exception is a UNIX kernel that refuses the scheduling attributes outright, where
+    //! the thread is created inheriting the caller's priority and applies the requested one to
+    //! itself as its first action -- still before started() is emitted and before run() is
+    //! entered. Qt falls back the same way.
     void Thread::start
         (
         Priority aPriority  //!< Priority for the new thread. InheritPriority, the default, keeps the
@@ -128,99 +50,106 @@ namespace QtLikeSignal
             return;
         }
 
-        // If a previous run finished but the caller never called wait(), mThread can still hold a
-        // joinable std::thread. Overwriting mThread below would destroy that std::thread while it
-        // is still joinable, which calls std::terminate(). Join it first.
-        if( mThread && mThread->joinable() )
-        {
-            mThread->join();
-        }
+        // A previous run may have finished without anyone calling wait(), leaving its OS thread
+        // unreaped. Reap it before its handle is overwritten -- Qt's start() likewise waits out a
+        // thread it finds in the Finishing state. Returns immediately when there is nothing to
+        // reap.
+        wait();
 
-        // Held across the std::thread construction so setPriority() can never observe mRunning ==
-        // true while mThread is still the previous run's object (or null). A run body that finishes
-        // before this scope ends simply waits for the lock at its tail.
+        // Held across thread creation so setPriority() can never observe mRunning == true while
+        // the handle is still the previous run's (or absent). A run body that finishes before
+        // this scope ends simply waits for the lock at its tail.
         std::lock_guard<std::mutex> startLock( mPriorityMutex );
 
         mRunning.store( true );
         mFinished.store( false );
         mExiting.store( false );
+        mPriorityNeedsReset = false;
         // Each run starts from what start() was given, never from what the previous run ended at: a
         // priority set on an earlier run said nothing about this one, and reporting the stale value
         // would be a lie about a thread that never got it.
         mPriority = aPriority;
 
-        mThread = std::make_unique<std::thread>(
-            [this]()
+        startPlatformSpecific();
+    }
+
+    //! Body the OS thread runs: dispatcher setup, run(), then teardown.
+    //!
+    //! Everything between the OS entry point and the end of the thread's life. Called only by
+    //! threadEntry().
+    void Thread::threadBody()
+    {
+        sCurrentThread = this;
+        moveToThread( this );
+
+        {
+            // Blocks here until start() releases the lock, which is what guarantees the native
+            // handle is published before anything below can use it. There is normally no
+            // priority work left to do -- Windows set it on the suspended thread, UNIX passed it
+            // to pthread_create() -- so this only bites when the UNIX scheduling attributes were
+            // refused, and even then it still lands before started() is emitted and before run()
+            // is entered.
+            std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
+            if( mPriorityNeedsReset )
             {
-                sCurrentThread = this;
-                this->moveToThread( this );
+                mPriorityNeedsReset = false;
+                applyPriority( mPriority );
+            }
+        }
 
-                {
-                    // First thing the new thread does, so started() and the whole of run() happen at
-                    // the requested priority. It blocks here until start() releases the lock, which
-                    // is also what guarantees mThread is already assigned -- applyPriority() reads
-                    // the native handle out of it.
-                    std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
-                    if( mPriority != InheritPriority )
-                    {
-                        applyPriority( mPriority );
-                    }
-                }
+        bool createdDispatcher = false;
+        if( !mData->dispatcher() )
+        {
+            #if defined( _WIN32 )
+                mData->setDispatcher( std::make_shared<EventDispatcherWin32>() );
+            #elif defined( __linux__ )
+                mData->setDispatcher( std::make_shared<EventDispatcherLinux>() );
+            #else
+                mData->setDispatcher( std::make_shared<EventDispatcherDefault>() );
+            #endif
+            createdDispatcher = true;
+        }
 
-                bool createdDispatcher = false;
-                if( !mData->dispatcher() )
-                {
-                    #if defined( _WIN32 )
-                        mData->setDispatcher( std::make_shared<EventDispatcherWin32>() );
-                    #elif defined( __linux__ )
-                        mData->setDispatcher( std::make_shared<EventDispatcherLinux>() );
-                    #else
-                        mData->setDispatcher( std::make_shared<EventDispatcherDefault>() );
-                    #endif
-                    createdDispatcher = true;
-                }
+        started.emit();
 
-                started.emit();
+        run();
 
-                this->run();
+        finished.emit();
 
-                finished.emit();
+        // Drain deferred deletes before letting go of the dispatcher, mirroring Qt's
+        // QThreadPrivate::finish(), which calls sendPostedEvents(nullptr, DeferredDelete) right
+        // after emitting finished() and before cleanup() destroys the dispatcher. Without this,
+        // anything that called deleteLater() before the loop stopped is never destroyed: the
+        // dispatcher's destructor can free the queued events but has no way to free their
+        // receivers.
+        if( auto disp = mData->dispatcher() )
+        {
+            disp->processDeferredDeletes();
+        }
 
-                // Drain deferred deletes before letting go of the dispatcher, mirroring Qt's
-                // QThreadPrivate::finish(), which calls sendPostedEvents(nullptr, DeferredDelete)
-                // right after emitting finished() and before cleanup() destroys the dispatcher.
-                // Without this, anything that called deleteLater() before the loop stopped is never
-                // destroyed: the dispatcher's destructor can free the queued events but has no way
-                // to free their receivers.
-                if( auto disp = mData->dispatcher() )
-                {
-                    disp->processDeferredDeletes();
-                }
+        if( createdDispatcher )
+        {
+            // Just drop this thread's reference. Any other thread that is part-way through a call
+            // still holds its own strong reference from ThreadData::dispatcher(), so the
+            // dispatcher stays alive until that call finishes rather than being freed underneath
+            // it.
+            mData->setDispatcher( nullptr );
+        }
 
-                if( createdDispatcher )
-                {
-                    // Just drop this thread's reference. Any other thread that is part-way through a
-                    // call still holds its own strong reference from ThreadData::dispatcher(), so
-                    // the dispatcher stays alive until that call finishes rather than being freed
-                    // underneath it.
-                    mData->setDispatcher( nullptr );
-                }
-
-                {
-                    // Under the same mutex setPriority() uses. This is the only place mRunning
-                    // becomes false, so a setPriority() holding the lock and seeing mRunning == true
-                    // knows this store has not happened yet and the OS thread is still alive -- which
-                    // is what makes using the native handle there safe rather than merely likely.
-                    std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
-                    mRunning.store( false );
-                }
-                mFinished.store( true );
-                {
-                    std::lock_guard<std::mutex> lock( mWaitMutex );
-                    mWaitCv.notify_all();
-                }
-                sCurrentThread = nullptr;
-            } );
+        {
+            // Under the same mutex setPriority() uses. This is the only place mRunning becomes
+            // false, so a setPriority() holding the lock and seeing mRunning == true knows this
+            // store has not happened yet and the OS thread is still alive -- which is what makes
+            // using the native handle there safe rather than merely likely.
+            std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
+            mRunning.store( false );
+        }
+        mFinished.store( true );
+        {
+            std::lock_guard<std::mutex> lock( mWaitMutex );
+            mWaitCv.notify_all();
+        }
+        sCurrentThread = nullptr;
     }
 
     //! Requests the thread's event loop to quit with return code 0. Thread-safe.
@@ -242,48 +171,6 @@ namespace QtLikeSignal
         {
             dispatcher->interrupt();
             dispatcher->wakeUp();
-        }
-    }
-
-    //! Blocks until the thread has finished executing or timeout expires. Thread-safe. Returns
-    //! true if thread finished, false if timeout occurred.
-    bool Thread::wait
-        (
-        unsigned long aTime  //!< Maximum time to wait in milliseconds.
-        )
-    {
-        if( mFinished.load() )
-        {
-            if( mThread && mThread->joinable() )
-            {
-                mThread->join();
-            }
-            return true;
-        }
-
-        if( !mThread || !mThread->joinable() )
-        {
-            return true;
-        }
-
-        if( aTime == ULONG_MAX )
-        {
-            mThread->join();
-            return true;
-        }
-        else
-        {
-            std::unique_lock<std::mutex> lock( mWaitMutex );
-            bool completed = mWaitCv.wait_for(
-                lock, std::chrono::milliseconds( aTime ), [this]
-                {
-                    return mFinished.load();
-                } );
-            if( completed && mThread->joinable() )
-            {
-                mThread->join();
-            }
-            return completed;
         }
     }
 
@@ -328,7 +215,12 @@ namespace QtLikeSignal
 
         // Qt refuses the same way. There is no OS thread to act on yet, and quietly stashing the
         // value for a future start() would promise a thread priority this class does not deliver.
-        if( !mRunning.load() || !mThread )
+        #if defined( _WIN32 )
+            const bool haveThread = ( mHandle != nullptr );
+        #else
+            const bool haveThread = mJoinable;
+        #endif
+        if( !mRunning.load() || !haveThread )
         {
             std::fprintf( stderr,
                 "Thread::setPriority: cannot set priority, thread is not running\n" );
@@ -350,103 +242,6 @@ namespace QtLikeSignal
             return InheritPriority;
         }
         return mPriority;
-    }
-
-    //! Pushes a priority down to the OS thread.
-    //!
-    //! Split out from setPriority() only so the platform code sits in one place. The caller must
-    //! hold mPriorityMutex and must already have established that the thread is running, because
-    //! this dereferences mThread and uses its native handle.
-    void Thread::applyPriority
-        (
-        Priority aPriority  //!< The priority to apply. Never InheritPriority.
-        )
-    {
-        #if defined( _WIN32 )
-            int prio;
-            switch( aPriority )
-            {
-            case IdlePriority:
-                prio = THREAD_PRIORITY_IDLE;
-                break;
-
-            case LowestPriority:
-                prio = THREAD_PRIORITY_LOWEST;
-                break;
-
-            case LowPriority:
-                prio = THREAD_PRIORITY_BELOW_NORMAL;
-                break;
-
-            case NormalPriority:
-                prio = THREAD_PRIORITY_NORMAL;
-                break;
-
-            case HighPriority:
-                prio = THREAD_PRIORITY_ABOVE_NORMAL;
-                break;
-
-            case HighestPriority:
-                prio = THREAD_PRIORITY_HIGHEST;
-                break;
-
-            case TimeCriticalPriority:
-                prio = THREAD_PRIORITY_TIME_CRITICAL;
-                break;
-
-            default:
-                return;
-            }
-
-            if( !SetThreadPriority( static_cast<HANDLE>( mThread->native_handle() ), prio ) )
-            {
-                std::fprintf( stderr, "Thread::setPriority: failed to set thread priority\n" );
-            }
-        #elif defined( G_HAS_THREAD_PRIORITY_SCHEDULING )
-            const pthread_t handle = mThread->native_handle();
-
-            int schedPolicy = 0;
-            sched_param param {};
-            if( pthread_getschedparam( handle, &schedPolicy, &param ) != 0 )
-            {
-                std::fprintf( stderr, "Thread::setPriority: cannot get scheduler parameters\n" );
-                return;
-            }
-
-            int prio = 0;
-            if( !calculateUnixPriority( aPriority, &schedPolicy, &prio ) )
-            {
-                std::fprintf( stderr,
-                    "Thread::setPriority: cannot determine scheduler priority range\n" );
-                return;
-            }
-
-            param.sched_priority = prio;
-            const int status = pthread_setschedparam( handle, schedPolicy, &param );
-
-            #ifdef SCHED_IDLE
-                // Asking for SCHED_IDLE can be refused even where the constant exists, so fall back
-                // to the lowest priority the thread's existing policy allows.
-                //
-                // Deviation from Qt, deliberately: qthread_unix.cpp tests `status == -1 && errno ==
-                // EINVAL` here, but pthread_setschedparam returns the error number directly and does
-                // not touch errno, so that branch can never be taken and the fallback is dead code in
-                // Qt. Testing the return value is what actually makes it run.
-                if( status == EINVAL && schedPolicy == SCHED_IDLE )
-                {
-                    if( pthread_getschedparam( handle, &schedPolicy, &param ) == 0 )
-                    {
-                        param.sched_priority = sched_get_priority_min( schedPolicy );
-                        pthread_setschedparam( handle, schedPolicy, &param );
-                    }
-                }
-            #else
-                ( void )status;
-            #endif
-        #else
-            // No priority scheduling on this platform; the value is recorded and nothing else.
-            ( void )aPriority;
-        #endif
     }
 
     //! Gets a pointer to the thread currently executing. Thread-safe.

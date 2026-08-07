@@ -35,13 +35,15 @@ protected:
 
 };
 
-//! Regression test for Thread::start() calling std::terminate() when restarted after a
-//! previous run finished but wait() was never called.
+//! Regression test for Thread::start() overwriting the previous run's OS thread when restarted
+//! after that run finished but wait() was never called.
 //!
-//! If a previous run has already completed, mThread still holds a joinable std::thread;
-//! overwriting it (as start() used to do unconditionally) destroys a joinable std::thread, which
-//! calls std::terminate() per the standard -- aborting the whole test process, not just failing
-//! this test. The fix joins any existing joinable thread first. Fully deterministic.
+//! A finished thread is not a reaped one: its handle is still open (Windows) or still joinable
+//! (pthreads) until someone waits on it. start() used to overwrite it regardless, which back when
+//! the backing store was a std::thread meant destroying a joinable one -- std::terminate(),
+//! aborting the whole test process rather than failing this test. Against the OS thread APIs the
+//! same defect leaks the thread instead, quietly. Either way the fix is the same: start() reaps
+//! the previous run first. Fully deterministic.
 TEST( ThreadDefectTest, RestartAfterFinishWithoutWaitDoesNotTerminate )
 {
     DefectInstantFinishThread thread;
