@@ -1,8 +1,8 @@
-#include "GObject.h"
+#include "Object.h"
 
-#include "GAbstractEventDispatcher.h"
-#include "GEvent.h"
-#include "GThread.h"
+#include "AbstractEventDispatcher.h"
+#include "Event.h"
+#include "Thread.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -19,41 +19,41 @@ namespace QtLikeSignal
 
     //! Process-wide registry of callLater invocations still waiting to run.
     //!
-    //! Exists as a friend of GObject purely so it can name GObject's private GCallLaterKey /
-    //! GCallLaterKeyHash types; a plain file-scope map could not. Not declared in any header.
-    struct GCallLaterRegistry
+    //! Exists as a friend of Object purely so it can name Object's private CallLaterKey /
+    //! CallLaterKeyHash types; a plain file-scope map could not. Not declared in any header.
+    struct CallLaterRegistry
     {
         static std::mutex sMutex;
-        static std::unordered_map<GObject::GCallLaterKey,
+        static std::unordered_map<Object::CallLaterKey,
             std::shared_ptr<CallLaterNode>,
-            GObject::GCallLaterKeyHash>
+            Object::CallLaterKeyHash>
         sPending;
     };
 
-    std::mutex GCallLaterRegistry::sMutex;
-    std::unordered_map<GObject::GCallLaterKey,
+    std::mutex CallLaterRegistry::sMutex;
+    std::unordered_map<Object::CallLaterKey,
         std::shared_ptr<CallLaterNode>,
-        GObject::GCallLaterKeyHash>
-    GCallLaterRegistry::sPending;
+        Object::CallLaterKeyHash>
+    CallLaterRegistry::sPending;
 
-    std::atomic<int> GObject::sNextTimerId { 1 };
+    std::atomic<int> Object::sNextTimerId { 1 };
 
     //! Constructs an object.
-    GObject::GObject()
+    Object::Object()
         : mLife( std::make_shared<int>( 0 ) )
     {
-        GThread* current = GThread::currentThread();
+        Thread* current = Thread::currentThread();
         mThread.store( current );
         if( current )
         {
-            std::shared_ptr<GThreadData> data = current->threadData();
+            std::shared_ptr<ThreadData> data = current->threadData();
             std::lock_guard<std::mutex> lock( mThreadDataMutex );
             mThreadData = std::move( data );
         }
     }
 
     //! Destroys the object and triggers all registered cleanup callbacks.
-    GObject::~GObject()
+    Object::~Object()
     {
         // Invalidate the life token first. connect()/callLater() wrappers running on other threads
         // check objectLife().lock() before posting a call to this object; resetting mLife up front
@@ -78,8 +78,8 @@ namespace QtLikeSignal
         }
 
         {
-            std::lock_guard<std::mutex> lock( GCallLaterRegistry::sMutex );
-            auto& pending = GCallLaterRegistry::sPending;
+            std::lock_guard<std::mutex> lock( CallLaterRegistry::sMutex );
+            auto& pending = CallLaterRegistry::sPending;
             for( auto it = pending.begin(); it != pending.end();)
             {
                 if( it->first.mContext == this )
@@ -93,7 +93,7 @@ namespace QtLikeSignal
             }
         }
 
-        std::shared_ptr<GThreadData> threadDataCopy;
+        std::shared_ptr<ThreadData> threadDataCopy;
         {
             std::lock_guard<std::mutex> lock( mThreadDataMutex );
             threadDataCopy = mThreadData;
@@ -108,10 +108,10 @@ namespace QtLikeSignal
     }
 
     //! Internal helper to schedule or update a callLater deferred invocation.
-    void GObject::scheduleCallLater
+    void Object::scheduleCallLater
         (
-        GObject* aContext,               //!< Target context object.
-        const GCallLaterKey& aKey,       //!< Key identifying the deferred call.
+        Object* aContext,               //!< Target context object.
+        const CallLaterKey& aKey,       //!< Key identifying the deferred call.
         std::function<void()> aInvoker   //!< Callback executing the call.
         )
     {
@@ -124,8 +124,8 @@ namespace QtLikeSignal
         bool isNew = false;
 
         {
-            std::lock_guard<std::mutex> lock( GCallLaterRegistry::sMutex );
-            auto& pending = GCallLaterRegistry::sPending;
+            std::lock_guard<std::mutex> lock( CallLaterRegistry::sMutex );
+            auto& pending = CallLaterRegistry::sPending;
             auto it = pending.find( aKey );
             if( it != pending.end() )
             {
@@ -151,8 +151,8 @@ namespace QtLikeSignal
                 {
                     std::function<void()> fnToRun;
                     {
-                        std::lock_guard<std::mutex> lock( GCallLaterRegistry::sMutex );
-                        GCallLaterRegistry::sPending.erase( aKey );
+                        std::lock_guard<std::mutex> lock( CallLaterRegistry::sMutex );
+                        CallLaterRegistry::sPending.erase( aKey );
                     }
                     {
                         std::lock_guard<std::mutex> nodeLock( node->mMutex );
@@ -176,14 +176,14 @@ namespace QtLikeSignal
                 // (context, slot) pair for the rest of the object's life, even once a dispatcher
                 // existed. Erasing lets the next call re-arm. This call is still lost; only a
                 // retry queue could save it, which would need its own ownership rules.
-                std::lock_guard<std::mutex> lock( GCallLaterRegistry::sMutex );
-                GCallLaterRegistry::sPending.erase( aKey );
+                std::lock_guard<std::mutex> lock( CallLaterRegistry::sMutex );
+                CallLaterRegistry::sPending.erase( aKey );
             }
         }
     }
 
     //! Gets the thread affinity of this object. Thread-safe.
-    GThread* GObject::thread() const
+    Thread* Object::thread() const
     {
         return mThread.load();
     }
@@ -195,7 +195,7 @@ namespace QtLikeSignal
     //! dispatcher is reached, so exposing it hands out the machinery every other access-control
     //! decision in this class exists to protect. Returns nullptr if this object has no affinity.
     //! Thread-safe.
-    std::shared_ptr<GThreadData> GObject::threadData() const
+    std::shared_ptr<ThreadData> Object::threadData() const
     {
         std::lock_guard<std::mutex> lock( mThreadDataMutex );
         return mThreadData;
@@ -210,16 +210,16 @@ namespace QtLikeSignal
     //!
     //! Qt's one exception is reproduced: an object with *no* thread affinity yet may be adopted by
     //! the calling thread. That is what lets a freshly constructed object be moved onto a worker,
-    //! and what lets GThread adopt itself when its run loop starts. Returns true if the object now
+    //! and what lets Thread adopt itself when its run loop starts. Returns true if the object now
     //! lives in the requested thread (including when it already did); false if the move was
     //! refused, in which case the affinity is unchanged.
-    bool GObject::moveToThread
+    bool Object::moveToThread
         (
-        GThread* aThread  //!< The new thread this object will live in; nullptr clears the affinity.
+        Thread* aThread  //!< The new thread this object will live in; nullptr clears the affinity.
         )
     {
-        GThread* const currentAffinity = mThread.load();
-        GThread* const callerThread = GThread::currentThread();
+        Thread* const currentAffinity = mThread.load();
+        Thread* const callerThread = Thread::currentThread();
 
         if( currentAffinity == aThread )
         {
@@ -230,14 +230,14 @@ namespace QtLikeSignal
         // Transcribed from Qt's QObject::moveToThread(). The general rule is that only the thread that
         // owns an object may re-home it, with one exception: an object that has no affinity yet may be
         // adopted by the calling thread. That exception is what makes the two normal idioms work --
-        // moving a freshly constructed object onto a worker, and GThread adopting itself once its run
+        // moving a freshly constructed object onto a worker, and Thread adopting itself once its run
         // loop starts -- while still rejecting one thread yanking another thread's live object away.
         const bool adoptingUnownedObject = ( currentAffinity == nullptr && aThread == callerThread )
         ;
         if( !adoptingUnownedObject && currentAffinity != callerThread )
         {
             std::fprintf( stderr,
-                "GObject::moveToThread: current thread is not the object's thread; cannot "
+                "Object::moveToThread: current thread is not the object's thread; cannot "
                 "move it to the target thread\n" );
             return false;
         }
@@ -247,9 +247,9 @@ namespace QtLikeSignal
         // thread and restarted, with the same interval, in the targetThread"); without it the timers
         // would keep firing on the thread the object just left, delivering timerEvent() somewhere it
         // no longer lives.
-        std::vector<GAbstractEventDispatcher::TimerRegistration> timersToMove;
+        std::vector<AbstractEventDispatcher::TimerRegistration> timersToMove;
         {
-            std::shared_ptr<GThreadData> oldData;
+            std::shared_ptr<ThreadData> oldData;
             {
                 std::lock_guard<std::mutex> lock( mThreadDataMutex );
                 oldData = mThreadData;
@@ -267,7 +267,7 @@ namespace QtLikeSignal
         // one atomic-looking step so concurrent readers of threadData() never see a half-updated or
         // torn shared_ptr. The lock is still needed even though writes are now single-threaded:
         // threadData() is read from other threads.
-        std::shared_ptr<GThreadData> newData = aThread ? aThread->threadData() : nullptr;
+        std::shared_ptr<ThreadData> newData = aThread ? aThread->threadData() : nullptr;
         mThread.store( aThread );
         {
             std::lock_guard<std::mutex> lock( mThreadDataMutex );
@@ -279,7 +279,7 @@ namespace QtLikeSignal
             // Re-register on the destination thread rather than from here: registerTimer() must run
             // where the timer will be serviced. Qt solves it the same way, queueing the
             // re-registration with invokeMethod(..., Qt::QueuedConnection) so it lands on the new
-            // thread. If this object is destroyed before the queued call runs, ~GObject() strips its
+            // thread. If this object is destroyed before the queued call runs, ~Object() strips its
             // pending events from the dispatcher, so the call is dropped rather than dangling.
             dispatchMetaCall(
                 this,
@@ -303,14 +303,14 @@ namespace QtLikeSignal
     }
 
     //! Gets the object's descriptive name. Thread-safe.
-    std::string GObject::objectName() const
+    std::string Object::objectName() const
     {
         std::lock_guard<std::mutex> lock( mNameMutex );
         return mObjectName;
     }
 
     //! Sets the object's descriptive name. Thread-safe.
-    void GObject::setObjectName
+    void Object::setObjectName
         (
         const std::string& aName  //!< The new object name.
         )
@@ -320,14 +320,14 @@ namespace QtLikeSignal
     }
 
     //! Schedules this object for deletion in the event loop. Thread-safe.
-    void GObject::deleteLater()
+    void Object::deleteLater()
     {
-        auto* event = new GDeferredDeleteEvent();
+        auto* event = new DeferredDeleteEvent();
         if( auto tData = threadData() )
         {
             if( auto disp = tData->dispatcher() )
             {
-                disp->postEvent( this, static_cast<GEvent*>( event ) );
+                disp->postEvent( this, static_cast<Event*>( event ) );
                 return;
             }
         }
@@ -341,9 +341,9 @@ namespace QtLikeSignal
     //! the sole caller (see the friend declaration in the header), and the set of event types is
     //! closed. Override timerEvent() instead to react to timers. Returns true if the event was
     //! recognized and handled.
-    bool GObject::event
+    bool Object::event
         (
-        GEvent* aEvent  //!< The event to handle.
+        Event* aEvent  //!< The event to handle.
         )
     {
         if( !aEvent )
@@ -353,20 +353,20 @@ namespace QtLikeSignal
 
         switch( aEvent->type() )
         {
-        case GEvent::Timer:
-            timerEvent( static_cast<GTimerEvent*>( aEvent ) );
+        case Event::Timer:
+            timerEvent( static_cast<TimerEvent*>( aEvent ) );
             return true;
 
-        case GEvent::DeferredDelete:
+        case Event::DeferredDelete:
             delete this;
             return true;
 
-        case GEvent::MetaCall:
-            static_cast<GMetaCallEvent*>( aEvent )->placeMetaCall();
+        case Event::MetaCall:
+            static_cast<MetaCallEvent*>( aEvent )->placeMetaCall();
             return true;
 
         default:
-            // The only events that reach this queue are the three above, all posted by GObject's
+            // The only events that reach this queue are the three above, all posted by Object's
             // own internals. Nothing can inject an arbitrary event for an arbitrary receiver, so
             // any other type is unreachable rather than something to hand to a user hook.
             return false;
@@ -374,9 +374,9 @@ namespace QtLikeSignal
     }
 
     //! Handles timer events sent to this object.
-    void GObject::timerEvent
+    void Object::timerEvent
         (
-        GTimerEvent* aEvent  //!< The timer event containing the timer ID.
+        TimerEvent* aEvent  //!< The timer event containing the timer ID.
         )
     {
         ( void )aEvent;
@@ -391,7 +391,7 @@ namespace QtLikeSignal
     //! ("Timers cannot be started from another thread"). To start a timer for an object living in
     //! another thread, get onto that thread first -- for example with callLater(). Returns the
     //! unique timer ID, or -1 if the timer could not be started.
-    int GObject::startTimer
+    int Object::startTimer
         (
         int aInterval  //!< Interval in milliseconds.
         )
@@ -401,10 +401,10 @@ namespace QtLikeSignal
         // Registering from elsewhere would either race that dispatcher's lifetime or quietly install
         // a timer whose events the caller is not positioned to receive, so refuse it outright rather
         // than doing something surprising.
-        if( thread() != GThread::currentThread() )
+        if( thread() != Thread::currentThread() )
         {
             std::fprintf( stderr,
-                "GObject::startTimer: timers cannot be started from another thread\n" );
+                "Object::startTimer: timers cannot be started from another thread\n" );
             return -1;
         }
 
@@ -420,7 +420,7 @@ namespace QtLikeSignal
         }
 
         std::fprintf( stderr,
-            "GObject::startTimer: this thread has no event dispatcher, so the timer cannot "
+            "Object::startTimer: this thread has no event dispatcher, so the timer cannot "
             "be started\n" );
         return -1;
     }
@@ -429,16 +429,16 @@ namespace QtLikeSignal
     //!
     //! **Not thread-safe: must be called from this object's own thread**, for the same reason as
     //! startTimer(). Calls from another thread are rejected with a warning and do nothing.
-    void GObject::killTimer
+    void Object::killTimer
         (
         int aId  //!< The timer ID to stop.
         )
     {
         // Thread-confined for the same reason as startTimer().
-        if( thread() != GThread::currentThread() )
+        if( thread() != Thread::currentThread() )
         {
             std::fprintf( stderr,
-                "GObject::killTimer: timers cannot be stopped from another thread\n" )
+                "Object::killTimer: timers cannot be stopped from another thread\n" )
             ;
             return;
         }
@@ -453,7 +453,7 @@ namespace QtLikeSignal
     }
 
     //! Registers a callback to be executed when this object is destroyed. Thread-safe.
-    void GObject::addCleanupCallback
+    void Object::addCleanupCallback
         (
         std::function<void()> aCallback  //!< The function to execute upon destruction.
         )
@@ -467,9 +467,9 @@ namespace QtLikeSignal
     //! could not be delivered at all, which happens when the target has no thread affinity or its
     //! thread has no event dispatcher yet. Callers that track pending state must undo it when this
     //! returns false.
-    bool GObject::dispatchMetaCall
+    bool Object::dispatchMetaCall
         (
-        GObject* aTarget,               //!< Target GObject.
+        Object* aTarget,               //!< Target Object.
         std::function<void()> aSlot,    //!< Callback function.
         ConnectionType aType         //!< Connection type.
         )
@@ -479,11 +479,11 @@ namespace QtLikeSignal
             return false;
         }
 
-        GThread* targetThread = aTarget->thread();
+        Thread* targetThread = aTarget->thread();
         ConnectionType activeType = aType;
         if( activeType == ConnectionType::AutoConnection )
         {
-            GThread* currentThread = GThread::currentThread();
+            Thread* currentThread = Thread::currentThread();
             if( currentThread == targetThread )
             {
                 activeType = ConnectionType::DirectConnection;
@@ -496,12 +496,12 @@ namespace QtLikeSignal
 
         if( activeType == ConnectionType::QueuedConnection )
         {
-            auto* event = new GMetaCallEvent( aSlot );
+            auto* event = new MetaCallEvent( aSlot );
             if( auto tData = aTarget->threadData() )
             {
                 if( auto disp = tData->dispatcher() )
                 {
-                    disp->postEvent( aTarget, static_cast<GEvent*>( event ) );
+                    disp->postEvent( aTarget, static_cast<Event*>( event ) );
                     return true;
                 }
             }

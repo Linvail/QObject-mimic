@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "GThread.h"
+#include "Thread.h"
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -17,7 +17,7 @@ using namespace QtLikeSignal;
 //! Priority can only be set on a running thread, so every test here needs one that is reliably
 //! alive while the call is made. Using the default run()/exec() gives that without a sleep-based
 //! guess: the thread sits in the loop until quit() lands.
-class PriorityTestThread : public GThread
+class PriorityTestThread : public Thread
 {
 public:
     //! Blocks until the thread's event loop is up and able to accept work. Returns true if the
@@ -48,25 +48,25 @@ public:
 };
 
 //! A thread that is not running reports InheritPriority.
-TEST( GThreadPriority, ReportsInheritPriorityBeforeStart )
+TEST( ThreadPriority, ReportsInheritPriorityBeforeStart )
 {
     PriorityTestThread thread;
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority );
 }
 
 //! setPriority() before start() is refused and leaves the reported priority alone.
 //!
 //! This is Qt's contract and the surprising half of it: the value is not remembered for the
 //! upcoming run, so the thread starts at InheritPriority regardless.
-TEST( GThreadPriority, SetBeforeStartIsRefused )
+TEST( ThreadPriority, SetBeforeStartIsRefused )
 {
     PriorityTestThread thread;
-    thread.setPriority( GThread::HighPriority );
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+    thread.setPriority( Thread::HighPriority );
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority );
 
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority )
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority )
         << "a priority set before start() must not leak into the run";
 
     thread.quit();
@@ -74,24 +74,24 @@ TEST( GThreadPriority, SetBeforeStartIsRefused )
 }
 
 //! Every settable priority round-trips through the getter on a running thread.
-TEST( GThreadPriority, SetAndGetOnRunningThread )
+TEST( ThreadPriority, SetAndGetOnRunningThread )
 {
-    const GThread::Priority priorities[] =
+    const Thread::Priority priorities[] =
     {
-        GThread::IdlePriority,
-        GThread::LowestPriority,
-        GThread::LowPriority,
-        GThread::NormalPriority,
-        GThread::HighPriority,
-        GThread::HighestPriority,
-        GThread::TimeCriticalPriority
+        Thread::IdlePriority,
+        Thread::LowestPriority,
+        Thread::LowPriority,
+        Thread::NormalPriority,
+        Thread::HighPriority,
+        Thread::HighestPriority,
+        Thread::TimeCriticalPriority
     };
 
     PriorityTestThread thread;
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
 
-    for( const GThread::Priority priority : priorities )
+    for( const Thread::Priority priority : priorities )
     {
         thread.setPriority( priority );
         EXPECT_EQ( thread.priority(), priority );
@@ -102,17 +102,17 @@ TEST( GThreadPriority, SetAndGetOnRunningThread )
 }
 
 //! InheritPriority is rejected by the setter and does not disturb the current value.
-TEST( GThreadPriority, InheritPriorityIsRejected )
+TEST( ThreadPriority, InheritPriorityIsRejected )
 {
     PriorityTestThread thread;
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
 
-    thread.setPriority( GThread::HighPriority );
-    ASSERT_EQ( thread.priority(), GThread::HighPriority );
+    thread.setPriority( Thread::HighPriority );
+    ASSERT_EQ( thread.priority(), Thread::HighPriority );
 
-    thread.setPriority( GThread::InheritPriority );
-    EXPECT_EQ( thread.priority(), GThread::HighPriority )
+    thread.setPriority( Thread::InheritPriority );
+    EXPECT_EQ( thread.priority(), Thread::HighPriority )
         << "a rejected setPriority() must not clear the priority already in effect";
 
     thread.quit();
@@ -120,34 +120,34 @@ TEST( GThreadPriority, InheritPriorityIsRejected )
 }
 
 //! Once the thread has finished, the priority reverts to InheritPriority.
-TEST( GThreadPriority, ReportsInheritPriorityAfterFinish )
+TEST( ThreadPriority, ReportsInheritPriorityAfterFinish )
 {
     PriorityTestThread thread;
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
-    thread.setPriority( GThread::HighPriority );
-    ASSERT_EQ( thread.priority(), GThread::HighPriority );
+    thread.setPriority( Thread::HighPriority );
+    ASSERT_EQ( thread.priority(), Thread::HighPriority );
 
     thread.quit();
     ASSERT_TRUE( thread.wait() );
 
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority );
 }
 
 //! A second run does not inherit the priority set on the first.
-TEST( GThreadPriority, RestartResetsToInheritPriority )
+TEST( ThreadPriority, RestartResetsToInheritPriority )
 {
     PriorityTestThread thread;
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
-    thread.setPriority( GThread::HighestPriority );
-    ASSERT_EQ( thread.priority(), GThread::HighestPriority );
+    thread.setPriority( Thread::HighestPriority );
+    ASSERT_EQ( thread.priority(), Thread::HighestPriority );
     thread.quit();
     ASSERT_TRUE( thread.wait() );
 
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority )
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority )
         << "the previous run's priority said nothing about this one";
 
     thread.quit();
@@ -155,26 +155,26 @@ TEST( GThreadPriority, RestartResetsToInheritPriority )
 }
 
 //! start( Priority ) gives the thread its priority without a separate setter call.
-TEST( GThreadPriority, StartWithPriorityIsReported )
+TEST( ThreadPriority, StartWithPriorityIsReported )
 {
     PriorityTestThread thread;
-    thread.start( GThread::HighPriority );
+    thread.start( Thread::HighPriority );
     ASSERT_TRUE( thread.waitUntilRunning() );
 
-    EXPECT_EQ( thread.priority(), GThread::HighPriority );
+    EXPECT_EQ( thread.priority(), Thread::HighPriority );
 
     thread.quit();
     thread.wait();
 }
 
 //! start() with no argument still means InheritPriority, as it always did.
-TEST( GThreadPriority, StartWithoutArgumentInherits )
+TEST( ThreadPriority, StartWithoutArgumentInherits )
 {
     PriorityTestThread thread;
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
 
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority );
 
     thread.quit();
     thread.wait();
@@ -185,9 +185,9 @@ TEST( GThreadPriority, StartWithoutArgumentInherits )
 //! This is the point of applying it from inside the new thread. Overriding run() to sample the
 //! priority as its first statement is the only way to observe the ordering the documentation
 //! promises; checking after the fact would pass even if the priority arrived late.
-TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
+TEST( ThreadPriority, PriorityIsInEffectBeforeRunBegins )
 {
-    class SamplingThread : public GThread
+    class SamplingThread : public Thread
     {
     public:
         std::atomic<int> mSampled { -1 };
@@ -196,13 +196,13 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
         virtual void run() override
         {
             mSampled.store( static_cast<int>( priority() ) );
-            GThread::run();
+            Thread::run();
         }
 
     };
 
     SamplingThread thread;
-    thread.start( GThread::HighestPriority );
+    thread.start( Thread::HighestPriority );
     ASSERT_TRUE( thread.isRunning() || thread.isFinished() );
 
     // Give run() a chance to record the value, then stop the loop.
@@ -212,7 +212,7 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
         std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
     }
 
-    EXPECT_EQ( thread.mSampled.load(), static_cast<int>( GThread::HighestPriority ) )
+    EXPECT_EQ( thread.mSampled.load(), static_cast<int>( Thread::HighestPriority ) )
         << "run() started before the requested priority was in effect";
 
     thread.quit();
@@ -220,18 +220,18 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
 }
 
 //! A restart with no argument clears a priority the previous run was started with.
-TEST( GThreadPriority, RestartWithoutPriorityClearsPrevious )
+TEST( ThreadPriority, RestartWithoutPriorityClearsPrevious )
 {
     PriorityTestThread thread;
-    thread.start( GThread::TimeCriticalPriority );
+    thread.start( Thread::TimeCriticalPriority );
     ASSERT_TRUE( thread.waitUntilRunning() );
-    ASSERT_EQ( thread.priority(), GThread::TimeCriticalPriority );
+    ASSERT_EQ( thread.priority(), Thread::TimeCriticalPriority );
     thread.quit();
     ASSERT_TRUE( thread.wait() );
 
     thread.start();
     ASSERT_TRUE( thread.waitUntilRunning() );
-    EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+    EXPECT_EQ( thread.priority(), Thread::InheritPriority );
 
     thread.quit();
     thread.wait();
@@ -243,7 +243,7 @@ TEST( GThreadPriority, RestartWithoutPriorityClearsPrevious )
 //! hammers setPriority() from another thread while the target quits underneath it, which is the
 //! case mPriorityMutex exists to make safe. Under a sanitizer build this is the test that would
 //! catch a use-after-exit on the native handle.
-TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
+TEST( ThreadPriority, SetPriorityRacingThreadExitIsSafe )
 {
     for( int round = 0; round < 20; ++round )
     {
@@ -257,7 +257,7 @@ TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
             {
                 while( !stop.load() )
                 {
-                    thread.setPriority( GThread::HighPriority );
+                    thread.setPriority( Thread::HighPriority );
                     thread.priority();
                 }
             } );
@@ -268,12 +268,12 @@ TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
         stop.store( true );
         hammer.join();
 
-        EXPECT_EQ( thread.priority(), GThread::InheritPriority );
+        EXPECT_EQ( thread.priority(), Thread::InheritPriority );
     }
 }
 
 //! Concurrent setters from many threads leave a coherent value behind.
-TEST( GThreadPriority, ConcurrentSettersAreSerialised )
+TEST( ThreadPriority, ConcurrentSettersAreSerialised )
 {
     PriorityTestThread thread;
     thread.start();
@@ -287,8 +287,8 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
             {
                 for( int n = 0; n < 200; ++n )
                 {
-                    thread.setPriority( GThread::LowPriority );
-                    thread.setPriority( GThread::HighPriority );
+                    thread.setPriority( Thread::LowPriority );
+                    thread.setPriority( Thread::HighPriority );
                 }
             } );
     }
@@ -297,8 +297,8 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
         setter.join();
     }
 
-    const GThread::Priority finalPriority = thread.priority();
-    EXPECT_TRUE( finalPriority == GThread::LowPriority || finalPriority == GThread::HighPriority );
+    const Thread::Priority finalPriority = thread.priority();
+    EXPECT_TRUE( finalPriority == Thread::LowPriority || finalPriority == Thread::HighPriority );
 
     thread.quit();
     thread.wait();
@@ -312,23 +312,23 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
     //! through our own getter. There is no equivalent assertion on Linux: the default SCHED_OTHER
     //! policy reports a single-value priority range, so every level maps to the same number and
     //! nothing observable changes.
-    TEST( GThreadPriority, WindowsAppliesPriorityToOsThread )
+    TEST( ThreadPriority, WindowsAppliesPriorityToOsThread )
     {
         struct Expectation
         {
-            GThread::Priority mPriority;
+            Thread::Priority mPriority;
             int mNativePriority;
         };
 
         const Expectation expectations[] =
         {
-            { GThread::IdlePriority, THREAD_PRIORITY_IDLE },
-            { GThread::LowestPriority, THREAD_PRIORITY_LOWEST },
-            { GThread::LowPriority, THREAD_PRIORITY_BELOW_NORMAL },
-            { GThread::NormalPriority, THREAD_PRIORITY_NORMAL },
-            { GThread::HighPriority, THREAD_PRIORITY_ABOVE_NORMAL },
-            { GThread::HighestPriority, THREAD_PRIORITY_HIGHEST },
-            { GThread::TimeCriticalPriority, THREAD_PRIORITY_TIME_CRITICAL }
+            { Thread::IdlePriority, THREAD_PRIORITY_IDLE },
+            { Thread::LowestPriority, THREAD_PRIORITY_LOWEST },
+            { Thread::LowPriority, THREAD_PRIORITY_BELOW_NORMAL },
+            { Thread::NormalPriority, THREAD_PRIORITY_NORMAL },
+            { Thread::HighPriority, THREAD_PRIORITY_ABOVE_NORMAL },
+            { Thread::HighestPriority, THREAD_PRIORITY_HIGHEST },
+            { Thread::TimeCriticalPriority, THREAD_PRIORITY_TIME_CRITICAL }
         };
 
         PriorityTestThread thread;
@@ -362,12 +362,12 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
     }
 
     //! A priority passed to start() reaches the OS thread, not just our own bookkeeping.
-    TEST( GThreadPriority, WindowsStartWithPriorityAppliesToOsThread )
+    TEST( ThreadPriority, WindowsStartWithPriorityAppliesToOsThread )
     {
         PriorityTestThread thread;
-        thread.start( GThread::HighestPriority );
+        thread.start( Thread::HighestPriority );
         ASSERT_TRUE( thread.waitUntilRunning() );
-        ASSERT_EQ( thread.priority(), GThread::HighestPriority );
+        ASSERT_EQ( thread.priority(), Thread::HighestPriority );
 
         std::promise<int> reported;
         std::future<int> answer = reported.get_future();

@@ -1,16 +1,16 @@
-#include "GEventDispatcherDefault.h"
-#include "GEvent.h"
-#include "GObject.h"
+#include "EventDispatcherDefault.h"
+#include "Event.h"
+#include "Object.h"
 #include <algorithm>
 #include <unordered_set>
 
 namespace QtLikeSignal
 {
     //! Constructs a new default event dispatcher.
-    GEventDispatcherDefault::GEventDispatcherDefault() = default;
+    EventDispatcherDefault::EventDispatcherDefault() = default;
 
     //! Destroys the default event dispatcher and frees pending events.
-    GEventDispatcherDefault::~GEventDispatcherDefault()
+    EventDispatcherDefault::~EventDispatcherDefault()
     {
         std::lock_guard<std::mutex> lock( mMutex );
         while( !mEventQueue.empty() )
@@ -24,7 +24,7 @@ namespace QtLikeSignal
     //! true if any events or timers were processed, false otherwise.
     //!
     //! Thread-safe. Called by thread event loop.
-    bool GEventDispatcherDefault::processEvents()
+    bool EventDispatcherDefault::processEvents()
     {
         if( mInterrupt )
         {
@@ -45,7 +45,7 @@ namespace QtLikeSignal
             {
                 if( now >= t.mNextFire )
                 {
-                    timerEventsToProcess.push_back( { t.mReceiver, new GTimerEvent( t.mTimerId ) } )
+                    timerEventsToProcess.push_back( { t.mReceiver, new TimerEvent( t.mTimerId ) } )
                     ;
                     t.mNextFire = now + std::chrono::milliseconds( t.mIntervalMs );
                 }
@@ -110,7 +110,7 @@ namespace QtLikeSignal
 
             if( mInterrupt )
             {
-                // timerEventsToProcess may already hold heap-allocated GTimerEvent objects collected
+                // timerEventsToProcess may already hold heap-allocated TimerEvent objects collected
                 // above; they were never handed off to the dispatch loop below, so free them here to
                 // avoid leaking them.
                 for( auto& ep : timerEventsToProcess )
@@ -130,12 +130,12 @@ namespace QtLikeSignal
 
         bool processedAny = false;
 
-        // Tracks receivers that were deleted via a GDeferredDeleteEvent processed earlier in this
+        // Tracks receivers that were deleted via a DeferredDeleteEvent processed earlier in this
         // same batch. Both eventsToProcess and timerEventsToProcess are snapshots drained/collected
-        // before dispatch begins, so removeEventsForReceiver() (called from ~GObject()) cannot strip
+        // before dispatch begins, so removeEventsForReceiver() (called from ~Object()) cannot strip
         // a receiver's remaining entries out of these local vectors -- without this guard, a later
         // entry for the same (now-deleted) receiver would be a use-after-free.
-        std::unordered_set<GObject*> deletedReceivers;
+        std::unordered_set<Object*> deletedReceivers;
 
         // Dispatch queued events
         for( const auto& ep : eventsToProcess )
@@ -151,7 +151,7 @@ namespace QtLikeSignal
                 continue;
             }
 
-            const bool isDeferredDelete = ( ep.mEvent->type() == GEvent::DeferredDelete );
+            const bool isDeferredDelete = ( ep.mEvent->type() == Event::DeferredDelete );
             ep.mReceiver->event( ep.mEvent );
             if( isDeferredDelete )
             {
@@ -184,11 +184,11 @@ namespace QtLikeSignal
     }
 
     //! Registers a timer for a target object. Thread-safe.
-    void GEventDispatcherDefault::registerTimer
+    void EventDispatcherDefault::registerTimer
         (
         int aTimerId,     //!< Unique timer identifier.
         int aInterval,    //!< Interval in milliseconds.
-        GObject* aObject  //!< Target object to receive GTimerEvent.
+        Object* aObject  //!< Target object to receive TimerEvent.
         )
     {
         if( !aObject || aInterval < 0 )
@@ -221,7 +221,7 @@ namespace QtLikeSignal
 
     //! Unregisters a timer by ID. Returns true if timer was found and removed, false otherwise.
     //! Thread-safe.
-    bool GEventDispatcherDefault::unregisterTimer
+    bool EventDispatcherDefault::unregisterTimer
         (
         int aTimerId  //!< Unique timer identifier.
         )
@@ -244,10 +244,10 @@ namespace QtLikeSignal
     }
 
     //! Thread-safely posts an event to the dispatcher's queue.
-    void GEventDispatcherDefault::postEvent
+    void EventDispatcherDefault::postEvent
         (
-        GObject* aReceiver,  //!< The target object receiving the event.
-        GEvent* aEvent       //!< The event to be dispatched.
+        Object* aReceiver,  //!< The target object receiving the event.
+        Event* aEvent       //!< The event to be dispatched.
         )
     {
         if( !aReceiver || !aEvent )
@@ -264,9 +264,9 @@ namespace QtLikeSignal
     }
 
     //! Removes and deletes all pending events for the specified receiver. Thread-safe.
-    void GEventDispatcherDefault::removeEventsForReceiver
+    void EventDispatcherDefault::removeEventsForReceiver
         (
-        GObject* aReceiver  //!< The target receiver object.
+        Object* aReceiver  //!< The target receiver object.
         )
     {
         if( !aReceiver )
@@ -301,10 +301,10 @@ namespace QtLikeSignal
 
     //! Unregisters the receiver's timers and returns them for re-registration elsewhere. Returns
     //! the removed registrations, empty if the receiver had none. Thread-safe.
-    std::vector<GAbstractEventDispatcher::TimerRegistration>GEventDispatcherDefault::
+    std::vector<AbstractEventDispatcher::TimerRegistration>EventDispatcherDefault::
     takeTimersForReceiver
         (
-        GObject* aReceiver  //!< The receiver whose timers should be taken.
+        Object* aReceiver  //!< The receiver whose timers should be taken.
         )
     {
         std::vector<TimerRegistration> taken;
@@ -339,7 +339,7 @@ namespace QtLikeSignal
 
     //! Dispatches any pending deferred-delete events, destroying their receivers. Thread-safe.
     //! Intended to run on the dispatcher's own thread.
-    void GEventDispatcherDefault::processDeferredDeletes()
+    void EventDispatcherDefault::processDeferredDeletes()
     {
         // Destroying an object can queue further deferred deletes -- a cleanup callback may
         // deleteLater() something else -- so keep draining until none remain, as Qt does rather than
@@ -348,7 +348,7 @@ namespace QtLikeSignal
         // Receivers already destroyed in an earlier pass are tracked for the same reason
         // processEvents() tracks them: two deleteLater() calls on one object queue two events, and
         // dispatching the second after the first has destroyed it would be a use-after-free.
-        std::unordered_set<GObject*> deletedReceivers;
+        std::unordered_set<Object*> deletedReceivers;
 
         for(;;)
         {
@@ -357,7 +357,7 @@ namespace QtLikeSignal
                 std::lock_guard<std::mutex> lock( mMutex );
                 for( auto it = mEventQueue.begin(); it != mEventQueue.end();)
                 {
-                    if( it->mEvent && it->mEvent->type() == GEvent::DeferredDelete )
+                    if( it->mEvent && it->mEvent->type() == Event::DeferredDelete )
                     {
                         deferredDeletes.push_back(*it );
                         it = mEventQueue.erase( it );
@@ -374,7 +374,7 @@ namespace QtLikeSignal
                 break;
             }
 
-            // Dispatch with mMutex released: ~GObject() calls removeEventsForReceiver(), which takes
+            // Dispatch with mMutex released: ~Object() calls removeEventsForReceiver(), which takes
             // the same non-recursive mutex and would otherwise deadlock.
             for( const auto& ep : deferredDeletes )
             {
@@ -388,7 +388,7 @@ namespace QtLikeSignal
     }
 
     //! Wakes up the event loop if waiting. Thread-safe.
-    void GEventDispatcherDefault::wakeUp()
+    void EventDispatcherDefault::wakeUp()
     {
         // The flag must be set under mMutex, not just notified. processEvents() waits on a
         // predicate, so a bare notify_all() is a no-op unless some state the predicate tests has
@@ -402,7 +402,7 @@ namespace QtLikeSignal
     }
 
     //! Interrupts processEvents execution. Thread-safe.
-    void GEventDispatcherDefault::interrupt()
+    void EventDispatcherDefault::interrupt()
     {
         // Taking mMutex here is what makes the unbounded wait in processEvents() safe. Setting the
         // atomic without the lock leaves a lost-wakeup window: a waiter that has already evaluated

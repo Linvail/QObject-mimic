@@ -1,48 +1,48 @@
-#include "GCoreApplication.h"
+#include "CoreApplication.h"
 
-#include "GAbstractEventDispatcher.h"
-#include "GEventDispatcherDefault.h"
+#include "AbstractEventDispatcher.h"
+#include "EventDispatcherDefault.h"
 #if defined( _WIN32 )
-    #include "GEventDispatcherWin32.h"
+    #include "EventDispatcherWin32.h"
 #elif defined( __linux__ )
-    #include "GEventDispatcherLinux.h"
+    #include "EventDispatcherLinux.h"
 #endif
-#include "GEvent.h"
+#include "Event.h"
 
 namespace QtLikeSignal
 {
-    GCoreApplication* GCoreApplication::sInstance = nullptr;
+    CoreApplication* CoreApplication::sInstance = nullptr;
 
     //! Constructs the application object.
-    GCoreApplication::GCoreApplication
+    CoreApplication::CoreApplication
         (
         int& aArgc,     //!< Argument count.
         char** aArgv    //!< Argument vector.
         )
-        : GObject()
+        : Object()
     {
         ( void )aArgc;
         ( void )aArgv;
         sInstance = this;
 
         #if defined( _WIN32 )
-            mDispatcher = std::make_shared<GEventDispatcherWin32>();
+            mDispatcher = std::make_shared<EventDispatcherWin32>();
         #elif defined( __linux__ )
-            mDispatcher = std::make_shared<GEventDispatcherLinux>();
+            mDispatcher = std::make_shared<EventDispatcherLinux>();
         #else
-            mDispatcher = std::make_shared<GEventDispatcherDefault>();
+            mDispatcher = std::make_shared<EventDispatcherDefault>();
         #endif
-        mMainThread = std::make_unique<GThread>();
+        mMainThread = std::make_unique<Thread>();
 
         mMainThread->mData->setDispatcher( mDispatcher );
-        GThread::sCurrentThread = mMainThread.get();
+        Thread::sCurrentThread = mMainThread.get();
 
-        // Self-adopt, mirroring exactly what GThread::start()'s lambda does for a worker thread
+        // Self-adopt, mirroring exactly what Thread::start()'s lambda does for a worker thread
         // (sCurrentThread = this; this->moveToThread(this);). Without this, mMainThread's own
-        // GObject-inherited thread affinity (mThreadData, set via moveToThread) never gets pointed
-        // at its own dispatcher-holding GThreadData (mData) -- those are two separate fields that
+        // Object-inherited thread affinity (mThreadData, set via moveToThread) never gets pointed
+        // at its own dispatcher-holding ThreadData (mData) -- those are two separate fields that
         // only coincide once an object has been moved onto itself. Anything that targets the
-        // GThread object directly (dispatchMetaCall(mainThreadPtr, ...), e.g. via GThread::post())
+        // Thread object directly (dispatchMetaCall(mainThreadPtr, ...), e.g. via Thread::post())
         // would silently fail to find a dispatcher without this, even though one exists.
         mMainThread->moveToThread( mMainThread.get() );
 
@@ -50,22 +50,22 @@ namespace QtLikeSignal
     }
 
     //! Destroys the application object.
-    GCoreApplication::~GCoreApplication()
+    CoreApplication::~CoreApplication()
     {
         this->moveToThread( nullptr );
         mMainThread->mData->setDispatcher( nullptr );
-        GThread::sCurrentThread = nullptr;
+        Thread::sCurrentThread = nullptr;
         sInstance = nullptr;
     }
 
     //! Returns the global application instance. Thread-safe.
-    GCoreApplication* GCoreApplication::instance()
+    CoreApplication* CoreApplication::instance()
     {
         return sInstance;
     }
 
     //! Enters the main event loop and waits until quit() is called. Returns the exit code.
-    int GCoreApplication::exec()
+    int CoreApplication::exec()
     {
         mExiting.store( false );
         if( mDispatcher )
@@ -79,7 +79,7 @@ namespace QtLikeSignal
     }
 
     //! Tells the application to exit with return code 0. Thread-safe.
-    void GCoreApplication::quit()
+    void CoreApplication::quit()
     {
         mExiting.store( true );
         if( mDispatcher )

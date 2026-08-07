@@ -1,7 +1,7 @@
-#ifndef GEVENTDISPATCHERDEFAULT_H
-#define GEVENTDISPATCHERDEFAULT_H
+#ifndef EVENTDISPATCHERDEFAULT_H
+#define EVENTDISPATCHERDEFAULT_H
 
-#include "GAbstractEventDispatcher.h"
+#include "AbstractEventDispatcher.h"
 #include <deque>
 #include <vector>
 #include <mutex>
@@ -11,18 +11,18 @@
 
 namespace QtLikeSignal
 {
-    class GEvent;
-    class GObject;
+    class Event;
+    class Object;
 
-    //! Default cross-platform concrete implementation of GAbstractEventDispatcher.
+    //! Default cross-platform concrete implementation of AbstractEventDispatcher.
     //!
     //! All public methods are thread-safe and can be invoked safely across threads.
-    class GEventDispatcherDefault : public GAbstractEventDispatcher
+    class EventDispatcherDefault : public AbstractEventDispatcher
     {
     public:
-        GEventDispatcherDefault();
+        EventDispatcherDefault();
 
-        virtual ~GEventDispatcherDefault() override;
+        virtual ~EventDispatcherDefault() override;
 
         virtual bool processEvents() override;
 
@@ -33,15 +33,15 @@ namespace QtLikeSignal
         virtual void processDeferredDeletes() override;
 
     protected:
-        // Mirrors the access level GAbstractEventDispatcher gives these. The base class's access
-        // already governs every call made through the GAbstractEventDispatcher* that
-        // GThread::eventDispatcher() hands out, so this is belt-and-suspenders -- it closes the
-        // remaining gap for a caller holding a GEventDispatcherDefault* directly.
+        // Mirrors the access level AbstractEventDispatcher gives these. The base class's access
+        // already governs every call made through the AbstractEventDispatcher* that
+        // Thread::eventDispatcher() hands out, so this is belt-and-suspenders -- it closes the
+        // remaining gap for a caller holding a EventDispatcherDefault* directly.
         virtual void registerTimer
             (
             int aTimerId,
             int aInterval,
-            GObject* aObject
+            Object* aObject
             ) override;
 
         virtual bool unregisterTimer
@@ -51,28 +51,28 @@ namespace QtLikeSignal
 
         virtual void postEvent
             (
-            GObject* aReceiver,
-            GEvent* aEvent
+            Object* aReceiver,
+            Event* aEvent
             ) override;
 
         virtual void removeEventsForReceiver
             (
-            GObject* aReceiver
+            Object* aReceiver
             ) override;
 
         virtual std::vector<TimerRegistration> takeTimersForReceiver
             (
-            GObject* aReceiver
+            Object* aReceiver
             ) override;
 
-        friend class GObject;
+        friend class Object;
 
     private:
         //! One queued event together with the receiver it targets.
         struct EventPair
         {
-            GObject* mReceiver;
-            GEvent*  mEvent;
+            Object* mReceiver;
+            Event*  mEvent;
         };
 
         //! One registered timer's schedule and target.
@@ -80,7 +80,7 @@ namespace QtLikeSignal
         {
             int mTimerId;
             int mIntervalMs;
-            GObject*                              mReceiver;
+            Object*                              mReceiver;
             std::chrono::steady_clock::time_point mNextFire;
         };
 
@@ -100,4 +100,4 @@ namespace QtLikeSignal
     };
 }
 
-#endif // GEVENTDISPATCHERDEFAULT_H
+#endif // EVENTDISPATCHERDEFAULT_H

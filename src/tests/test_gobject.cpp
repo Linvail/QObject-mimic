@@ -1,19 +1,19 @@
 #include <gtest/gtest.h>
-#include "GObject.h"
-#include "GSignal.h"
-#include "GEvent.h"
-#include "GCoreApplication.h"
-#include "GThread.h"
-#include "GEventDispatcherDefault.h"
-#include "GTimer.h"
+#include "Object.h"
+#include "Signal.h"
+#include "Event.h"
+#include "CoreApplication.h"
+#include "Thread.h"
+#include "EventDispatcherDefault.h"
+#include "Timer.h"
 #include <atomic>
 #include <string>
 #include <future>
 
 using namespace QtLikeSignal;
 
-//! Helper test receiver class for verifying GObject slot invocations.
-class GObjectTestReceiver : public GObject
+//! Helper test receiver class for verifying Object slot invocations.
+class ObjectTestReceiver : public Object
 {
 public:
     //! Slot for integer parameter signals.
@@ -24,7 +24,7 @@ public:
     {
         mLastValue = aVal;
         mCallCount++;
-        mExecutedThread = GThread::currentThread();
+        mExecutedThread = Thread::currentThread();
     }
 
     //! Used to test overloaded slots.
@@ -36,7 +36,7 @@ public:
     {
         mLastValue = aVal1 + aVal2;
         mCallCount++;
-        mExecutedThread = GThread::currentThread();
+        mExecutedThread = Thread::currentThread();
     }
 
     //! Slot with non-void return type. Returns value plus 1.
@@ -47,7 +47,7 @@ public:
     {
         mLastValue = aVal;
         mCallCount++;
-        mExecutedThread = GThread::currentThread();
+        mExecutedThread = Thread::currentThread();
         return mLastValue;
     }
 
@@ -59,7 +59,7 @@ public:
     {
         mLastString = aStr;
         mCallCount++;
-        mExecutedThread = GThread::currentThread();
+        mExecutedThread = Thread::currentThread();
     }
 
     //! Slot taking multiple arguments.
@@ -74,7 +74,7 @@ public:
         mLastString = aB;
         mLastDouble = aC;
         mCallCount++;
-        mExecutedThread = GThread::currentThread();
+        mExecutedThread = Thread::currentThread();
     }
 
     //! Gets the total call count.
@@ -108,7 +108,7 @@ public:
     }
 
     //! Gets the thread on which the slot was executed. Returns a pointer to the thread.
-    GThread* executedThread() const
+    Thread* executedThread() const
     {
         return mExecutedThread;
     }
@@ -119,19 +119,19 @@ private:
     int mLastInt { 0 };
     std::string mLastString;
     double mLastDouble { 0.0 };
-    GThread*    mExecutedThread { nullptr };
+    Thread*    mExecutedThread { nullptr };
 };
 
 //! Tests direct signal-slot connection and emission.
 //!
-//! Verifies that GObject::connect() correctly binds a GSignal to a GObject member function slot
-//! using ConnectionType::DirectConnection, and that GSignal::emit() properly invokes the receiver slot.
-TEST( GObjectTest, DirectSignalSlotConnection )
+//! Verifies that Object::connect() correctly binds a Signal to a Object member function slot
+//! using ConnectionType::DirectConnection, and that Signal::emit() properly invokes the receiver slot.
+TEST( ObjectTest, DirectSignalSlotConnection )
 {
-    GSignal<int>        sig;
-    GObjectTestReceiver receiver;
+    Signal<int>        sig;
+    ObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived, ConnectionType::
         DirectConnection );
 
     sig.emit( 42 );
@@ -141,50 +141,50 @@ TEST( GObjectTest, DirectSignalSlotConnection )
 
 //! Tests signal disconnection via connection handle.
 //!
-//! Verifies GObject::disconnect() successfully disconnects a previously connected signal handle,
+//! Verifies Object::disconnect() successfully disconnects a previously connected signal handle,
 //! preventing subsequent signal emissions from invoking the slot.
-TEST( GObjectTest, SignalDisconnection )
+TEST( ObjectTest, SignalDisconnection )
 {
-    GSignal<int>        sig;
-    GObjectTestReceiver receiver;
+    Signal<int>        sig;
+    ObjectTestReceiver receiver;
 
-    auto handle = GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived );
+    auto handle = Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived );
     sig.emit( 10 );
     EXPECT_EQ( receiver.callCount(), 1 );
 
-    GObject::disconnect( handle );
+    Object::disconnect( handle );
     sig.emit( 20 );
     EXPECT_EQ( receiver.callCount(), 1 );
 }
 
 //! Tests object naming and thread affinity functions.
 //!
-//! Verifies GObject::setObjectName(), GObject::objectName(), GObject::thread(), and
-//! GObject::moveToThread().
-TEST( GObjectTest, ObjectNameAndThreadAffinity )
+//! Verifies Object::setObjectName(), Object::objectName(), Object::thread(), and
+//! Object::moveToThread().
+TEST( ObjectTest, ObjectNameAndThreadAffinity )
 {
-    GObject obj;
+    Object obj;
     EXPECT_EQ( obj.objectName(), "" );
 
     obj.setObjectName( "TestObject" );
     EXPECT_EQ( obj.objectName(), "TestObject" );
 
-    EXPECT_EQ( obj.thread(), GThread::currentThread() );
+    EXPECT_EQ( obj.thread(), Thread::currentThread() );
 
-    GThread dummyThread;
+    Thread dummyThread;
     obj.moveToThread( &dummyThread );
     EXPECT_EQ( obj.thread(), &dummyThread );
 }
 
 //! Tests weak life token tracking for object destruction.
 //!
-//! Verifies GObject::objectLife() returns a valid weak pointer during the lifetime of GObject
+//! Verifies Object::objectLife() returns a valid weak pointer during the lifetime of Object
 //! and expires upon object destruction.
-TEST( GObjectTest, ObjectLifeToken )
+TEST( ObjectTest, ObjectLifeToken )
 {
     std::weak_ptr<int> lifeToken;
     {
-        GObject obj;
+        Object obj;
         lifeToken = obj.objectLife();
         EXPECT_FALSE( lifeToken.expired() );
     }
@@ -193,15 +193,15 @@ TEST( GObjectTest, ObjectLifeToken )
 
 //! Tests destruction cleanup callback execution.
 //!
-//! Verifies GObject::addCleanupCallback() registers callbacks that execute when GObject is
+//! Verifies Object::addCleanupCallback() registers callbacks that execute when Object is
 //! destroyed.
-TEST( GObjectTest, CleanupCallbacks )
+TEST( ObjectTest, CleanupCallbacks )
 {
     bool callbackFired1 = false;
     bool callbackFired2 = false;
 
     {
-        GObject obj;
+        Object obj;
         obj.addCleanupCallback( [&callbackFired1]()
             {
                 callbackFired1 = true;
@@ -220,16 +220,16 @@ TEST( GObjectTest, CleanupCallbacks )
 
 //! Tests connecting a signal to a functor/lambda with context object.
 //!
-//! Verifies GObject::connect() overload for functor and lambda slots associated with a context
-//! object, testing GSignal::emit() and GSignal::operator().
-TEST( GObjectTest, LambdaSlotConnection )
+//! Verifies Object::connect() overload for functor and lambda slots associated with a context
+//! object, testing Signal::emit() and Signal::operator().
+TEST( ObjectTest, LambdaSlotConnection )
 {
-    GSignal<int> sig;
-    GObject context;
+    Signal<int> sig;
+    Object context;
     int receivedValue = 0;
     int callCount     = 0;
 
-    GObject::connect(
+    Object::connect(
         sig,
         &context,
         [&receivedValue, &callCount]( int aVal )
@@ -250,14 +250,14 @@ TEST( GObjectTest, LambdaSlotConnection )
 
 //! Tests multi-argument signal template instantiation and slot invocation.
 //!
-//! Verifies GSignal<int, std::string, double> correctly passes diverse primitive and object
+//! Verifies Signal<int, std::string, double> correctly passes diverse primitive and object
 //! arguments to a receiver slot.
-TEST( GObjectTest, MultiArgumentSignal )
+TEST( ObjectTest, MultiArgumentSignal )
 {
-    GSignal<int, std::string, double> sig;
-    GObjectTestReceiver receiver;
+    Signal<int, std::string, double> sig;
+    ObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onMultiArg, ConnectionType::
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onMultiArg, ConnectionType::
         DirectConnection );
 
     sig.emit( 7, "Hello Signals", 3.14159 );
@@ -269,18 +269,18 @@ TEST( GObjectTest, MultiArgumentSignal )
 
 //! Tests null receiver and context safety when connecting signals.
 //!
-//! Verifies GObject::connect() safely returns an invalid ConnectionHandle when passed nullptr
+//! Verifies Object::connect() safely returns an invalid ConnectionHandle when passed nullptr
 //! for receiver or context pointers.
-TEST( GObjectTest, NullReceiverOrContextConnection )
+TEST( ObjectTest, NullReceiverOrContextConnection )
 {
-    GSignal<int>         sig;
-    GObjectTestReceiver* nullReceiver = nullptr;
+    Signal<int>         sig;
+    ObjectTestReceiver* nullReceiver = nullptr;
 
-    auto handle1 = GObject::connect( sig, nullReceiver, &GObjectTestReceiver::onValueReceived );
+    auto handle1 = Object::connect( sig, nullReceiver, &ObjectTestReceiver::onValueReceived );
     EXPECT_FALSE( handle1.connected() );
 
-    GObject* nullContext = nullptr;
-    auto handle2     = GObject::connect( sig, nullContext, []( int )
+    Object* nullContext = nullptr;
+    auto handle2     = Object::connect( sig, nullContext, []( int )
         {
         } );
     EXPECT_FALSE( handle2.connected() );
@@ -288,14 +288,14 @@ TEST( GObjectTest, NullReceiverOrContextConnection )
 
 //! Tests low-level timer registration and cleanup.
 //!
-//! Verifies GObject::startTimer() returns valid timer IDs and GObject::killTimer() stops active
+//! Verifies Object::startTimer() returns valid timer IDs and Object::killTimer() stops active
 //! timers.
-TEST( GObjectTest, TimerStartAndKill )
+TEST( ObjectTest, TimerStartAndKill )
 {
-    GThread* thread = GThread::create(
+    Thread* thread = Thread::create(
         []()
         {
-            GObject obj;
+            Object obj;
             int timerId1 = obj.startTimer( 100 );
             int timerId2 = obj.startTimer( 200 );
 
@@ -312,24 +312,24 @@ TEST( GObjectTest, TimerStartAndKill )
 
 //! Tests connect() with member function slot when receiver lives in another thread.
 //!
-//! Verifies that GObject::connect() with ConnectionType::AutoConnection or ConnectionType::QueuedConnection routes signal
+//! Verifies that Object::connect() with ConnectionType::AutoConnection or ConnectionType::QueuedConnection routes signal
 //! emissions across thread boundaries into the receiver's thread event loop for execution.
-TEST( GObjectTest, CrossThreadMemberFunctionConnection )
+TEST( ObjectTest, CrossThreadMemberFunctionConnection )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GSignal<int>        sig;
-    GObjectTestReceiver receiver;
+    Signal<int>        sig;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived, ConnectionType::
         AutoConnection );
-    GObject::connect(
+    Object::connect(
         sig, &receiver, [&workerThread]( int )
         {
             workerThread.quit();
@@ -346,31 +346,31 @@ TEST( GObjectTest, CrossThreadMemberFunctionConnection )
 
 //! Tests connect() with a lambda slot and context living in another thread.
 //!
-//! Verifies that GObject::connect() with a context object living in a worker thread executes
+//! Verifies that Object::connect() with a context object living in a worker thread executes
 //! the lambda slot inside the worker thread context.
-TEST( GObjectTest, CrossThreadLambdaConnection )
+TEST( ObjectTest, CrossThreadLambdaConnection )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GSignal<std::string> sig;
-    GObject context;
+    Signal<std::string> sig;
+    Object context;
     context.moveToThread( &workerThread );
 
     std::string receivedMsg;
-    GThread*    executedInThread = nullptr;
+    Thread*    executedInThread = nullptr;
 
-    GObject::connect(
+    Object::connect(
         sig,
         &context,
         [&receivedMsg, &executedInThread, &workerThread]( std::string aMsg )
         {
             receivedMsg      = aMsg;
-            executedInThread = GThread::currentThread();
+            executedInThread = Thread::currentThread();
             workerThread.quit();
         },
         ConnectionType::AutoConnection );
@@ -386,11 +386,11 @@ TEST( GObjectTest, CrossThreadLambdaConnection )
 //! Tests signal emission when receiver is destroyed before event processing.
 //!
 //! Verifies that when a receiver object connected via ConnectionType::QueuedConnection is destroyed prior to
-//! the event dispatcher processing the pending GMetaCallEvent, the event is safely removed/ignored
+//! the event dispatcher processing the pending MetaCallEvent, the event is safely removed/ignored
 //! and no slot function is invoked or use-after-free error occurs.
-TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
+TEST( ObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
@@ -402,11 +402,11 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
     auto blockEnteredFuture = blockEnteredPromise.get_future();
     auto blockReleaseFuture = blockReleasePromise.get_future();
 
-    GObject dummyContext;
+    Object dummyContext;
     dummyContext.moveToThread( &workerThread );
 
-    GSignal<> blockSig;
-    GObject::connect(
+    Signal<> blockSig;
+    Object::connect(
         blockSig,
         &dummyContext,
         [&blockEnteredPromise, &blockReleaseFuture]()
@@ -419,14 +419,14 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
     blockSig.emit();
     blockEnteredFuture.get();
 
-    GSignal<int> sig;
+    Signal<int> sig;
 
     {
-        auto receiver = std::make_unique<GObjectTestReceiver>();
+        auto receiver = std::make_unique<ObjectTestReceiver>();
         receiver->moveToThread( &workerThread );
 
-        GObject::connect(
-            sig, receiver.get(), &GObjectTestReceiver::onValueReceived, ConnectionType::
+        Object::connect(
+            sig, receiver.get(), &ObjectTestReceiver::onValueReceived, ConnectionType::
             QueuedConnection );
 
         sig.emit( 55 );
@@ -436,8 +436,8 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
     blockReleasePromise.set_value();
 
     // Make another event to make sure the `emit(55)` is processed before the thread terminates.
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &dummyContext, [&workerThread]()
         {
             workerThread.quit();
@@ -451,11 +451,11 @@ TEST( GObjectTest, ReceiverDestroyedBeforeQueuedEventHandled )
 
 //! Tests lambda slot execution when context object is destroyed before event handling.
 //!
-//! Verifies that when a context GObject associated with a lambda connection is destroyed before
+//! Verifies that when a context Object associated with a lambda connection is destroyed before
 //! the queued metacall is processed, the lambda slot is not executed.
-TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
+TEST( ObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
@@ -467,11 +467,11 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
     auto blockEnteredFuture = blockEnteredPromise.get_future();
     auto blockReleaseFuture = blockReleasePromise.get_future();
 
-    GObject dummyContext;
+    Object dummyContext;
     dummyContext.moveToThread( &workerThread );
 
-    GSignal<> blockSig;
-    GObject::connect(
+    Signal<> blockSig;
+    Object::connect(
         blockSig,
         &dummyContext,
         [&blockEnteredPromise, &blockReleaseFuture]()
@@ -484,14 +484,14 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
     blockSig.emit();
     blockEnteredFuture.get();
 
-    GSignal<int> sig;
+    Signal<int> sig;
     bool lambdaExecuted = false;
 
     {
-        GObject context;
+        Object context;
         context.moveToThread( &workerThread );
 
-        GObject::connect(
+        Object::connect(
             sig, &context, [&lambdaExecuted]( int )
             {
                 lambdaExecuted = true;
@@ -504,8 +504,8 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
     blockReleasePromise.set_value();
 
     // Make another event to make sure the `emit(77)` is processed before the thread terminates.
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &dummyContext, [&workerThread]()
         {
             workerThread.quit();
@@ -521,27 +521,27 @@ TEST( GObjectTest, ContextDestroyedBeforeQueuedLambdaHandled )
 //!
 //! Verifies that when ConnectionType::DirectConnection is explicitly requested, the slot function is invoked
 //! synchronously on the emitting thread, even if the receiver belongs to a different thread.
-TEST( GObjectTest, CrossThreadDirectConnection )
+TEST( ObjectTest, CrossThreadDirectConnection )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GSignal<int>        sig;
-    GObjectTestReceiver receiver;
+    Signal<int>        sig;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived, ConnectionType::
         DirectConnection );
 
     sig.emit( 888 );
 
     EXPECT_EQ( receiver.callCount(), 1 );
     EXPECT_EQ( receiver.lastValue(), 888 );
-    EXPECT_EQ( receiver.executedThread(), GThread::currentThread() );
+    EXPECT_EQ( receiver.executedThread(), Thread::currentThread() );
     EXPECT_NE( receiver.executedThread(), &workerThread );
 
     workerThread.quit();
@@ -551,7 +551,7 @@ TEST( GObjectTest, CrossThreadDirectConnection )
 static int g_testFreeFuncCount   = 0;
 static int g_testFreeFuncLastVal = 0;
 
-//! Free function used for testing GObject::callLater free function overload.
+//! Free function used for testing Object::callLater free function overload.
 static void testCallLaterFreeFunc
     (
     int aVal  //!< Received test value.
@@ -561,23 +561,23 @@ static void testCallLaterFreeFunc
     g_testFreeFuncCount++;
 }
 
-//! Tests GObject::callLater with a member function slot.
-TEST( GObjectTest, CallLaterMemberFunction )
+//! Tests Object::callLater with a member function slot.
+TEST( ObjectTest, CallLaterMemberFunction )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GObjectTestReceiver receiver;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 42 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 42 );
 
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
@@ -591,20 +591,20 @@ TEST( GObjectTest, CallLaterMemberFunction )
     EXPECT_EQ( receiver.executedThread(), &workerThread );
 }
 
-//! Tests GObject::callLater deduplication and parameter overwriting.
+//! Tests Object::callLater deduplication and parameter overwriting.
 //!
 //! Verifies that invoking callLater multiple times in the same cycle collapses to a single
 //! execution using the arguments of the last call.
-TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
+TEST( ObjectTest, CallLaterDeduplicationAndLastArgs )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GObjectTestReceiver receiver;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
     // Pause workerThread's event processing so all callLater invocations land in the same event
@@ -613,8 +613,8 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
     std::condition_variable blockCv;
     bool canProceed = false;
 
-    GSignal<> blockSig;
-    GObject::connect(
+    Signal<> blockSig;
+    Object::connect(
         blockSig,
         &receiver,
         [&blockMutex, &blockCv, &canProceed]()
@@ -632,9 +632,9 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
     // Ensure workerThread has entered the block slot before issuing callLater
     std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
 
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 10 );
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 20 );
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 30 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 10 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 20 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 30 );
 
     // Release workerThread to process pending event loop queue
     {
@@ -643,8 +643,8 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
     }
     blockCv.notify_all();
 
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
@@ -658,26 +658,26 @@ TEST( GObjectTest, CallLaterDeduplicationAndLastArgs )
 }
 
 
-//! Tests GObject::callLater with a free function.
-TEST( GObjectTest, CallLaterFreeFunction )
+//! Tests Object::callLater with a free function.
+TEST( ObjectTest, CallLaterFreeFunction )
 {
     g_testFreeFuncCount   = 0;
     g_testFreeFuncLastVal = 0;
 
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GObject context;
+    Object context;
     context.moveToThread( &workerThread );
 
-    GObject::callLater( &context, &testCallLaterFreeFunc, 99 );
+    Object::callLater( &context, &testCallLaterFreeFunc, 99 );
 
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &context, [&workerThread]()
         {
             workerThread.quit();
@@ -690,27 +690,27 @@ TEST( GObjectTest, CallLaterFreeFunction )
     EXPECT_EQ( g_testFreeFuncLastVal, 99 );
 }
 
-//! Tests GObject::callLater with a GSignal instance.
-TEST( GObjectTest, CallLaterSignal )
+//! Tests Object::callLater with a Signal instance.
+TEST( ObjectTest, CallLaterSignal )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GObjectTestReceiver receiver;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
-    GSignal<int> sig;
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived, ConnectionType::
+    Signal<int> sig;
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived, ConnectionType::
         DirectConnection );
 
-    GObject::callLater( &receiver, sig, 777 );
+    Object::callLater( &receiver, sig, 777 );
 
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
@@ -723,27 +723,27 @@ TEST( GObjectTest, CallLaterSignal )
     EXPECT_EQ( receiver.lastValue(), 777 );
 }
 
-//! Tests GObject::callLater execution across multiple event loop cycles.
-TEST( GObjectTest, CallLaterMultipleCycles )
+//! Tests Object::callLater execution across multiple event loop cycles.
+TEST( ObjectTest, CallLaterMultipleCycles )
 {
-    GThread workerThread;
+    Thread workerThread;
     workerThread.start();
     while( !workerThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
 
-    GObjectTestReceiver receiver;
+    ObjectTestReceiver receiver;
     receiver.moveToThread( &workerThread );
 
     // Cycle 1
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 100 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 100 );
 
-    GSignal<> syncSig1;
+    Signal<> syncSig1;
     // Atomic: written on the worker thread and spun on here. A plain bool is a data race, which
     // ThreadSanitizer flags (and which a compiler is free to hoist out of the loop below).
     std::atomic<bool> sync1Done { false };
-    GObject::connect(
+    Object::connect(
         syncSig1, &receiver, [&sync1Done]()
         {
             sync1Done = true;
@@ -759,10 +759,10 @@ TEST( GObjectTest, CallLaterMultipleCycles )
     EXPECT_EQ( receiver.lastValue(), 100 );
 
     // Cycle 2
-    GObject::callLater( &receiver, &GObjectTestReceiver::onValueReceived, 200 );
+    Object::callLater( &receiver, &ObjectTestReceiver::onValueReceived, 200 );
 
-    GSignal<> quitSig;
-    GObject::connect(
+    Signal<> quitSig;
+    Object::connect(
         quitSig, &receiver, [&workerThread]()
         {
             workerThread.quit();
@@ -775,42 +775,42 @@ TEST( GObjectTest, CallLaterMultipleCycles )
     EXPECT_EQ( receiver.lastValue(), 200 );
 }
 
-//! Tests GObject::connect with overloaded slots.
-TEST( GObjectTest, ConnectOverloadedSlot )
+//! Tests Object::connect with overloaded slots.
+TEST( ObjectTest, ConnectOverloadedSlot )
 {
-    GSignal<int, int>   sig;
-    GObjectTestReceiver receiver;
+    Signal<int, int>   sig;
+    ObjectTestReceiver receiver;
 
     // onValueReceived has two overload 1-arg and 2-arg. Try if we can connect to the 2-arg one.
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueReceived );
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueReceived );
 
     sig.emit( 3, 4 );
     EXPECT_EQ( receiver.callCount(), 1 );
     EXPECT_EQ( receiver.lastValue(), 7 );
 }
 
-//! Tests GObject::connect with non-void-return slot.
-TEST( GObjectTest, ConneectNonVoidReturnSlot )
+//! Tests Object::connect with non-void-return slot.
+TEST( ObjectTest, ConneectNonVoidReturnSlot )
 {
-    GSignal<int>        sig;
-    GObjectTestReceiver receiver;
+    Signal<int>        sig;
+    ObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onValueNonVoidReturn );
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onValueNonVoidReturn );
 
     sig.emit( 42 );
     EXPECT_EQ( receiver.callCount(), 1 );
     EXPECT_EQ( receiver.lastValue(), 42 );
 }
 
-//! Tests GObject::connect with const reference argument slot.
-TEST( GObjectTest, ConnectConstReferenceSlot )
+//! Tests Object::connect with const reference argument slot.
+TEST( ObjectTest, ConnectConstReferenceSlot )
 {
-    GSignal<std::string> sig;
-    GObjectTestReceiver receiver;
+    Signal<std::string> sig;
+    ObjectTestReceiver receiver;
 
-    GObject::connect( sig, &receiver, &GObjectTestReceiver::onStringConstReference );
+    Object::connect( sig, &receiver, &ObjectTestReceiver::onStringConstReference );
 
-    sig.emit( "Hello, GObject!" );
+    sig.emit( "Hello, Object!" );
     EXPECT_EQ( receiver.callCount(), 1 );
-    EXPECT_EQ( receiver.lastString(), "Hello, GObject!" );
+    EXPECT_EQ( receiver.lastString(), "Hello, Object!" );
 }

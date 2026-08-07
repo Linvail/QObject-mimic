@@ -1,5 +1,5 @@
-#ifndef GEVENT_H
-#define GEVENT_H
+#ifndef EVENT_H
+#define EVENT_H
 
 #include <functional>
 #include <utility>
@@ -9,10 +9,10 @@ namespace QtLikeSignal
     //! Base class for all events in the event loop.
     //!
     //! The event set is closed: these three types are the only ones the queue ever carries, and all of
-    //! them are posted by GObject's own internals. There is deliberately no user/custom event type and
+    //! them are posted by Object's own internals. There is deliberately no user/custom event type and
     //! no way to post an arbitrary event for an arbitrary receiver -- this is a queued signal-slot
     //! mechanism, not a general event system.
-    class GEvent
+    class Event
     {
     public:
         //! The core event types.
@@ -23,7 +23,7 @@ namespace QtLikeSignal
             DeferredDelete = 3
         };
         //! Virtual destructor.
-        virtual ~GEvent() = default;
+        virtual ~Event() = default;
 
         //! Gets the type of the event. Thread-safe.
         Type type() const
@@ -34,8 +34,8 @@ namespace QtLikeSignal
     protected:
         //! Constructs an event of the specified type.
         //!
-        //! Protected: GEvent is only ever instantiated through one of the concrete subclasses below.
-        GEvent
+        //! Protected: Event is only ever instantiated through one of the concrete subclasses below.
+        Event
             (
             Type aType  //!< The type of the event.
             )
@@ -50,16 +50,16 @@ namespace QtLikeSignal
     //! An event that encapsulates a function call across threads.
     //!
     //! Entirely internal: it wraps an arbitrary callable, so both creating one and firing one are
-    //! restricted to GObject, which is the only code that queues or dispatches metacalls.
-    class GMetaCallEvent : public GEvent
+    //! restricted to Object, which is the only code that queues or dispatches metacalls.
+    class MetaCallEvent : public Event
     {
     private:
         //! Constructs a metacall event with the given callback.
-        GMetaCallEvent
+        MetaCallEvent
             (
             std::function<void()> aCallback  //!< The function to execute.
             )
-            : GEvent( MetaCall )
+            : Event( MetaCall )
             , mCallback( std::move( aCallback ) )
         {
         }
@@ -75,23 +75,23 @@ namespace QtLikeSignal
 
         std::function<void()> mCallback;
 
-        friend class GObject;
+        friend class Object;
     };
 
     //! Event sent when a timer expires.
-    class GTimerEvent : public GEvent
+    class TimerEvent : public Event
     {
     public:
         //! Constructs a timer event with a given timer ID.
         //!
         //! Left public, unlike the other two event types: timerEvent() is a supported override point,
-        //! so synthesizing a GTimerEvent to drive an override directly (as tests do) is legitimate.
+        //! so synthesizing a TimerEvent to drive an override directly (as tests do) is legitimate.
         //! Constructing one grants no privileged capability -- it cannot be posted to any queue.
-        GTimerEvent
+        TimerEvent
             (
             int aTimerId  //!< The unique identifier of the expired timer.
             )
-            : GEvent( Timer )
+            : Event( Timer )
             , mTimerId( aTimerId )
         {
         }
@@ -108,19 +108,19 @@ namespace QtLikeSignal
 
     //! Event sent to delete an object asynchronously.
     //!
-    //! Internal: only GObject::deleteLater() creates one. Delivering this event destroys the receiver,
+    //! Internal: only Object::deleteLater() creates one. Delivering this event destroys the receiver,
     //! so it must not be constructible by outside code.
-    class GDeferredDeleteEvent : public GEvent
+    class DeferredDeleteEvent : public Event
     {
     private:
         //! Constructs a deferred delete event.
-        GDeferredDeleteEvent()
-            : GEvent( DeferredDelete )
+        DeferredDeleteEvent()
+            : Event( DeferredDelete )
         {
         }
 
-        friend class GObject;
+        friend class Object;
     };
 }
 
-#endif  // GEVENT_H
+#endif  // EVENT_H

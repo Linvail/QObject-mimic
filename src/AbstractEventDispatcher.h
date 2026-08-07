@@ -1,5 +1,5 @@
-#ifndef GABSTRACTEVENTDISPATCHER_H
-#define GABSTRACTEVENTDISPATCHER_H
+#ifndef ABSTRACTEVENTDISPATCHER_H
+#define ABSTRACTEVENTDISPATCHER_H
 
 #include <deque>
 #include <mutex>
@@ -10,13 +10,13 @@
 
 namespace QtLikeSignal
 {
-    class GEvent;
-    class GObject;
+    class Event;
+    class Object;
 
     //! Abstract base class for event dispatchers managing event queues and timer dispatching.
     //!
     //! All public methods must be thread-safe as they can be invoked across threads.
-    class GAbstractEventDispatcher
+    class AbstractEventDispatcher
     {
     public:
         //! A timer registration, as handed between dispatchers when an object changes thread.
@@ -26,10 +26,10 @@ namespace QtLikeSignal
             int mIntervalMs;  //!< The interval the timer was registered with, in milliseconds.
         };
         //! Constructs an event dispatcher.
-        GAbstractEventDispatcher();
+        AbstractEventDispatcher();
 
         //! Destroys the event dispatcher and cleans up pending events.
-        virtual ~GAbstractEventDispatcher();
+        virtual ~AbstractEventDispatcher();
 
         //! Processes pending events and expired timers once, without infinite looping. Returns
         //! true if events were processed, false otherwise.
@@ -60,8 +60,8 @@ namespace QtLikeSignal
     protected:
         // The methods below all target a *specific* receiver object, so exposing them publicly would
         // let any caller inject events or timers on another object's behalf. They exist solely for
-        // GObject's own internals (deleteLater(), startTimer()/killTimer(), dispatchMetaCall(), and
-        // ~GObject()), which reach them through the friend declaration at the end of this class.
+        // Object's own internals (deleteLater(), startTimer()/killTimer(), dispatchMetaCall(), and
+        // ~Object()), which reach them through the friend declaration at the end of this class.
         // processEvents()/wakeUp()/interrupt() stay public: they drive or stop the loop as a whole
         // and cannot be aimed at a particular object.
         //! Registers a timer for the given object. Thread-safe.
@@ -69,7 +69,7 @@ namespace QtLikeSignal
             (
             int aTimerId,       //!< Unique timer identifier.
             int aInterval,      //!< Interval in milliseconds.
-            GObject* aObject    //!< Target object to receive GTimerEvent.
+            Object* aObject    //!< Target object to receive TimerEvent.
             ) = 0;
 
         //! Unregisters a timer by ID. Returns true if the timer was found and removed. Thread-safe.
@@ -81,30 +81,30 @@ namespace QtLikeSignal
         //! Thread-safely posts an event to the dispatcher's queue.
         virtual void postEvent
             (
-            GObject* aReceiver,  //!< The object that will receive the event.
-            GEvent* aEvent       //!< The event to be processed.
+            Object* aReceiver,  //!< The object that will receive the event.
+            Event* aEvent       //!< The event to be processed.
             ) = 0;
 
         //! Removes and deletes all pending events for the specified receiver. Thread-safe.
         virtual void removeEventsForReceiver
             (
-            GObject* aReceiver  //!< The receiver whose events should be removed.
+            Object* aReceiver  //!< The receiver whose events should be removed.
             ) = 0;
 
         //! Unregisters the receiver's timers and returns them so they can be re-registered.
         //!
-        //! Used by GObject::moveToThread() to carry active timers across to the destination thread's
+        //! Used by Object::moveToThread() to carry active timers across to the destination thread's
         //! dispatcher. The ids are handed back rather than released, so the same timer id stays valid
-        //! after the move and a GTimer's cached id still matches the events it receives -- the same
+        //! after the move and a Timer's cached id still matches the events it receives -- the same
         //! reason Qt notes "do not release our timer ids back to the pool" when it does this. Returns
         //! the removed registrations, empty if the receiver had none. Thread-safe.
         virtual std::vector<TimerRegistration> takeTimersForReceiver
             (
-            GObject* aReceiver  //!< The receiver whose timers should be taken.
+            Object* aReceiver  //!< The receiver whose timers should be taken.
             ) = 0;
 
-        friend class GObject;
+        friend class Object;
     };
 }
 
-#endif // GABSTRACTEVENTDISPATCHER_H
+#endif // ABSTRACTEVENTDISPATCHER_H

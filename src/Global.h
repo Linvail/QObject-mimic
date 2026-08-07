@@ -1,5 +1,5 @@
-#ifndef GGLOBAL_H
-#define GGLOBAL_H
+#ifndef GLOBAL_H
+#define GLOBAL_H
 
 #include <memory>
 #include <type_traits>
@@ -42,10 +42,10 @@ namespace QtLikeSignal
     template<typename T>
     using NonDeduced = typename Identity<T>::type;
 
-    //! Type trait detecting GSignal instances. False for every T except a GSignal<Args...>
-    //! specialization, which the GSignal.h header specializes to true.
+    //! Type trait detecting Signal instances. False for every T except a Signal<Args...>
+    //! specialization, which the Signal.h header specializes to true.
     template<typename T>
-    struct IsGSignal : std::false_type
+    struct IsSignal : std::false_type
     {
     };
 
@@ -157,4 +157,4 @@ namespace QtLikeSignal
     #endif
 }
 
-#endif // GGLOBAL_H
+#endif // GLOBAL_H
