@@ -38,7 +38,7 @@ protected:
 //! Regression test for GThread::start() calling std::terminate() when restarted after a
 //! previous run finished but wait() was never called.
 //!
-//! If a previous run has already completed, m_thread still holds a joinable std::thread;
+//! If a previous run has already completed, mThread still holds a joinable std::thread;
 //! overwriting it (as start() used to do unconditionally) destroys a joinable std::thread, which
 //! calls std::terminate() per the standard -- aborting the whole test process, not just failing
 //! this test. The fix joins any existing joinable thread first. Fully deterministic.
@@ -48,7 +48,7 @@ TEST( GThreadDefectTest, RestartAfterFinishWithoutWaitDoesNotTerminate )
 
     thread.start();
 
-    // Poll isFinished() without ever calling wait(), so m_thread is left holding a joinable
+    // Poll isFinished() without ever calling wait(), so mThread is left holding a joinable
     // std::thread when we restart below.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 2 );
     while( !thread.isFinished() && std::chrono::steady_clock::now() < deadline )
@@ -79,10 +79,10 @@ public:
     //! No-op slot; only its signature and being invoked (or not) on a live object matters.
     void onValue
         (
-        int val  //!< Unused.
+        int aVal  //!< Unused.
         )
     {
-        ( void ) val;
+        ( void ) aVal;
     }
 
 };
@@ -266,11 +266,11 @@ TEST( GEventDispatcherDefaultDefectTest, NewShorterTimerWakesPromptly )
 // ---------------------------------------------------------------------------------------------
 // Defect: leaked GTimerEvent allocations if interrupt() lands between
 // GEventDispatcherDefault::processEvents() collecting already-expired timers and its subsequent
-// m_interrupt check.
+// mInterrupt check.
 // ---------------------------------------------------------------------------------------------
 
 //! Best-effort stress test targeting the narrow window in processEvents() between
-//! collecting already-expired timers into a local batch and checking m_interrupt right after.
+//! collecting already-expired timers into a local batch and checking mInterrupt right after.
 //!
 //! Before the fix, any GTimerEvent objects already allocated during collection were leaked if
 //! interrupt() landed in that window, since processEvents() returned early without ever handing
@@ -350,13 +350,13 @@ public:
     //! arrived.
     GThread* firingThread() const
     {
-        return m_firingThread.load();
+        return mFiringThread.load();
     }
 
     //! Gets how many timer events have been delivered.
     int fireCount() const
     {
-        return m_fireCount.load();
+        return mFireCount.load();
     }
 
 protected:
@@ -367,13 +367,13 @@ protected:
         ) override
     {
         ( void ) event;
-        m_firingThread.store( GThread::currentThread() );
-        m_fireCount.fetch_add( 1 );
+        mFiringThread.store( GThread::currentThread() );
+        mFireCount.fetch_add( 1 );
     }
 
 private:
-    std::atomic<GThread*> m_firingThread { nullptr };
-    std::atomic<int>      m_fireCount { 0 };
+    std::atomic<GThread*> mFiringThread { nullptr };
+    std::atomic<int>      mFireCount { 0 };
 };
 
 //! Verifies moveToThread() carries active timers to the destination thread.
@@ -445,11 +445,11 @@ TEST( GObjectDefectTest, MoveToThreadCarriesActiveTimersToTheNewThread )
 }
 
 // ---------------------------------------------------------------------------------------------
-// Defect: data race on GObject::m_threadData (written by moveToThread(), read unsynchronized
+// Defect: data race on GObject::mThreadData (written by moveToThread(), read unsynchronized
 // elsewhere).
 // ---------------------------------------------------------------------------------------------
 
-//! Thread that repeatedly re-homes its own object, to drive the m_threadData write side.
+//! Thread that repeatedly re-homes its own object, to drive the mThreadData write side.
 //!
 //! moveToThread() is now thread-confined, so only the thread that owns an object may re-home it.
 //! A thread *can* legally toggle its own object between itself and "no affinity": releasing it is
@@ -458,24 +458,24 @@ TEST( GObjectDefectTest, MoveToThreadCarriesActiveTimersToTheNewThread )
 class DefectAffinityTogglingThread : public GThread
 {
 public:
-    GObject subject;  //!< The object whose affinity is toggled. Owned by this thread once run() starts.
+    GObject mSubject;  //!< The object whose affinity is toggled. Owned by this thread once run() starts.
 
-    std::atomic<bool> stopToggling { false };  //!< Set to stop the toggle loop.
+    std::atomic<bool> mStopToggling { false };  //!< Set to stop the toggle loop.
 
 protected:
     //! Toggles the subject's affinity between this thread and none until stopped.
     virtual void run() override
     {
-        while( !stopToggling.load( std::memory_order_acquire ) )
+        while( !mStopToggling.load( std::memory_order_acquire ) )
         {
-            subject.moveToThread( this );    // adopt: legal, subject currently has no affinity
-            subject.moveToThread( nullptr ); // release: legal, this thread is the current owner
+            mSubject.moveToThread( this );    // adopt: legal, subject currently has no affinity
+            mSubject.moveToThread( nullptr ); // release: legal, this thread is the current owner
         }
     }
 
 };
 
-//! Best-effort stress test targeting the data race on GObject::m_threadData, previously
+//! Best-effort stress test targeting the data race on GObject::mThreadData, previously
 //! written by moveToThread() and read -- with no synchronization -- by threadData(),
 //! startTimer(), killTimer(), deleteLater(), and dispatchMetaCall(), despite all of those being
 //! documented thread-safe.
@@ -490,7 +490,7 @@ protected:
 //! between two threads from two *other* threads, which the confinement rule now (correctly)
 //! refuses -- so it tested nothing but the rejection path. The write side is now driven by the
 //! object's own owner, which is the only arrangement the rule permits, while the reads that the
-//! m_threadData mutex actually protects continue to come from other threads.
+//! mThreadData mutex actually protects continue to come from other threads.
 TEST( GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress )
 {
     DefectAffinityTogglingThread toggler;
@@ -498,19 +498,19 @@ TEST( GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress )
 
     std::atomic<bool> stopReading { false };
 
-    // Readers hammering the paths that read m_threadData from another thread -- exactly what the
+    // Readers hammering the paths that read mThreadData from another thread -- exactly what the
     // mutex exists for. threadData() itself is no longer public (it is internal plumbing, as in
     // Qt), so the read is driven through a queued signal emission instead: dispatchMetaCall()
     // calls target->threadData() to find the dispatcher to post to, which takes the same lock.
     auto readerBody = [&toggler, &stopReading]()
         {
             GSignal<> sig;
-            GObject::connect( sig, &toggler.subject, []()
+            GObject::connect( sig, &toggler.mSubject, []()
                 {
                 }, G::QueuedConnection );
             while( !stopReading.load( std::memory_order_acquire ) )
             {
-                ( void ) toggler.subject.thread();
+                ( void ) toggler.mSubject.thread();
                 sig.emit();
             }
         };
@@ -523,14 +523,14 @@ TEST( GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress )
     reader1.join();
     reader2.join();
 
-    toggler.stopToggling.store( true, std::memory_order_release );
+    toggler.mStopToggling.store( true, std::memory_order_release );
     toggler.wait();
 
     SUCCEED();
 }
 
 // ---------------------------------------------------------------------------------------------
-// Defect: ~GObject() invalidated the life token (m_life) as its LAST step rather than its first,
+// Defect: ~GObject() invalidated the life token (mLife) as its LAST step rather than its first,
 // widening the window in which a concurrent connect()/callLater() wrapper could still queue a
 // new event for an object that is mid-destruction.
 // ---------------------------------------------------------------------------------------------
@@ -540,7 +540,7 @@ TEST( GObjectDefectTest, ConcurrentMoveToThreadAndThreadDataAccessStress )
 //! The life token is now invalidated as the very first step of destruction, before running
 //! cleanup callbacks or erasing pending call-laters, rather than as the last step after
 //! removeEventsForReceiver() has already run. The residual window this leaves (a connect()
-//! wrapper's weakLife.lock() succeeding in the brief moment before m_life.reset() executes) is
+//! wrapper's weakLife.lock() succeeding in the brief moment before mLife.reset() executes) is
 //! narrow in both the old and new code and not reliably reproducible from a black-box test on its
 //! own; what the reordering robustly guarantees is that removeEventsForReceiver() now always runs
 //! strictly *after* the life token is invalidated within the same destructor call, giving it a
@@ -598,13 +598,13 @@ TEST( GObjectDefectTest, ConcurrentEmitDuringDestructionStress )
 }
 
 // ---------------------------------------------------------------------------------------------
-// Defect: ~GObject() invoked cleanup callbacks while still holding m_cleanupMutex, so a callback
+// Defect: ~GObject() invoked cleanup callbacks while still holding mCleanupMutex, so a callback
 // that called addCleanupCallback() on the same object self-deadlocked on a non-recursive mutex.
 // ---------------------------------------------------------------------------------------------
 
 //! Regression test for the cleanup-callback deadlock in ~GObject().
 //!
-//! ~GObject() used to run the callbacks inside the m_cleanupMutex lock_guard scope. A callback
+//! ~GObject() used to run the callbacks inside the mCleanupMutex lock_guard scope. A callback
 //! that re-entered addCleanupCallback() on the same object then blocked forever trying to relock
 //! a mutex its own call stack already held (locking a non-recursive std::mutex recursively is
 //! undefined behavior; deadlock is the usual manifestation). The fix swaps the callback vector out
@@ -633,7 +633,7 @@ TEST( GObjectDefectTest, CleanupCallbackRegisteringAnotherDoesNotDeadlock )
     subject->addCleanupCallback(
         [subject, reentrantCallSucceeded]()
         {
-            // Pre-fix, this call blocks forever: ~GObject() is still holding m_cleanupMutex.
+            // Pre-fix, this call blocks forever: ~GObject() is still holding mCleanupMutex.
             subject->addCleanupCallback( []()
             {
             } );
@@ -652,7 +652,7 @@ TEST( GObjectDefectTest, CleanupCallbackRegisteringAnotherDoesNotDeadlock )
     const bool finished
         = doneFuture.wait_for( std::chrono::seconds( 5 ) ) == std::future_status::ready;
     EXPECT_TRUE( finished ) << "~GObject() did not finish within 5s -- a cleanup callback that "
-        "re-registers another callback deadlocked on m_cleanupMutex.";
+        "re-registers another callback deadlocked on mCleanupMutex.";
 
     if( finished )
     {
@@ -678,17 +678,17 @@ public:
     //! Slot invoked by callLater().
     void onCall()
     {
-        m_callCount.fetch_add( 1 );
+        mCallCount.fetch_add( 1 );
     }
 
     //! Gets how many times onCall() has run.
     int callCount() const
     {
-        return m_callCount.load();
+        return mCallCount.load();
     }
 
 private:
-    std::atomic<int> m_callCount { 0 };
+    std::atomic<int> mCallCount { 0 };
 };
 
 //! Regression test for callLater() silently dropping every future call after one failure.
@@ -817,7 +817,7 @@ TEST( GThreadDefectTest, DispatcherUseDuringThreadShutdownStress )
 //!
 //! Made deterministic rather than racy: the worker is parked inside a queued slot while the
 //! deleteLater() is posted and quit() is called, guaranteeing the delete is still sitting in the
-//! queue when the loop is told to stop. On release, exec() sees m_exiting and returns without
+//! queue when the loop is told to stop. On release, exec() sees mExiting and returns without
 //! draining -- so the object survives only if the shutdown path handles it.
 //!
 //! Failure shows up twice over: the flag below stays false, and AddressSanitizer reports the leak.
@@ -968,7 +968,7 @@ TEST( GEventDispatcherDefaultDefectTest, WakeUpEndsIdleWait )
 //! Verifies a single-shot GTimer is already stopped by the time its timeout slot runs.
 //!
 //! GTimer::timerEvent() used to emit first and stop afterwards, so a slot observed isActive()
-//! == true for a timer that was about to be stopped, and GTimer touched m_singleShot/stop() after
+//! == true for a timer that was about to be stopped, and GTimer touched mSingleShot/stop() after
 //! arbitrary user code had run. It now stops first and emits last, matching Qt's QTimer ordering.
 //!
 //! This also covers the reentrancy half of the GTimer locking work: the slot calls back into

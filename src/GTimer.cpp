@@ -16,7 +16,7 @@ namespace QtLikeSignal
         // other than its own warns. That is a genuine misuse signal, not noise -- destroy the timer on
         // the thread it lives in. Nothing leaks either way: ~GObject() calls removeEventsForReceiver(),
         // which strips this object's timer registrations from the dispatcher regardless.
-        if( m_active )
+        if( mActive )
         {
             stop();
         }
@@ -25,52 +25,52 @@ namespace QtLikeSignal
     //! Gets the timer interval in milliseconds.
     int GTimer::interval() const
     {
-        return m_interval;
+        return mInterval;
     }
 
     //! Sets the timer interval in milliseconds.
     void GTimer::setInterval
         (
-        int msec  //!< Interval in milliseconds.
+        int aMsec  //!< Interval in milliseconds.
         )
     {
-        m_interval = msec;
+        mInterval = aMsec;
     }
 
     //! Checks if the timer is currently active (running).
     bool GTimer::isActive() const
     {
-        return m_active;
+        return mActive;
     }
 
     //! Checks if the timer is single-shot.
     bool GTimer::isSingleShot() const
     {
-        return m_singleShot;
+        return mSingleShot;
     }
 
     //! Sets whether the timer is single-shot.
     void GTimer::setSingleShot
         (
-        bool singleShot  //!< True for single-shot, false for periodic.
+        bool aSingleShot  //!< True for single-shot, false for periodic.
         )
     {
-        m_singleShot = singleShot;
+        mSingleShot = aSingleShot;
     }
 
     //! Gets the unique ID of the internal timer, or -1 if inactive.
     int GTimer::timerId() const
     {
-        return m_timerId;
+        return mTimerId;
     }
 
     //! Starts or restarts the timer with specified interval in milliseconds.
     void GTimer::start
         (
-        int msec  //!< Interval in milliseconds.
+        int aMsec  //!< Interval in milliseconds.
         )
     {
-        m_interval = msec;
+        mInterval = aMsec;
         start();
     }
 
@@ -80,8 +80,8 @@ namespace QtLikeSignal
     void GTimer::start()
     {
         stop();
-        m_timerId = startTimer( m_interval );
-        m_active = ( m_timerId != -1 );
+        mTimerId = startTimer( mInterval );
+        mActive = ( mTimerId != -1 );
     }
 
     //! Stops the timer.
@@ -90,21 +90,21 @@ namespace QtLikeSignal
     //! GObject::killTimer(). Calling it from elsewhere warns and leaves the timer running.
     void GTimer::stop()
     {
-        if( m_active && m_timerId != -1 )
+        if( mActive && mTimerId != -1 )
         {
-            killTimer( m_timerId );
-            m_timerId = -1;
-            m_active = false;
+            killTimer( mTimerId );
+            mTimerId = -1;
+            mActive = false;
         }
     }
 
     //! Internal timer event handler.
     void GTimer::timerEvent
         (
-        GTimerEvent* event  //!< Timer event.
+        GTimerEvent* aEvent  //!< Timer event.
         )
     {
-        if( !event || event->timerId() != m_timerId )
+        if( !aEvent || aEvent->timerId() != mTimerId )
         {
             return;
         }
@@ -116,7 +116,7 @@ namespace QtLikeSignal
         // Note this narrows -- but does not eliminate -- the hazard of a directly-connected slot
         // deleting the timer: emit() is still executing inside the GSignal member of the object being
         // destroyed. Use deleteLater() from a timeout slot; deleting outright is not supported.
-        if( m_singleShot )
+        if( mSingleShot )
         {
             stop();
         }

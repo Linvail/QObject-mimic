@@ -51,19 +51,19 @@ namespace QtLikeSignal
         };
         void start
             (
-            Priority priority = InheritPriority
+            Priority aPriority = InheritPriority
             );
 
         void quit();
 
         void exit
             (
-            int returnCode = 0
+            int aReturnCode = 0
             );
 
         bool wait
             (
-            unsigned long time = ULONG_MAX
+            unsigned long aTime = ULONG_MAX
             );
 
         bool isRunning() const;
@@ -72,7 +72,7 @@ namespace QtLikeSignal
 
         void setPriority
             (
-            Priority priority
+            Priority aPriority
             );
 
         Priority priority() const;
@@ -83,7 +83,7 @@ namespace QtLikeSignal
 
         bool post
             (
-            std::function<void()> task
+            std::function<void()> aTask
             );
 
         //! Signal emitted when the thread starts running.
@@ -95,7 +95,7 @@ namespace QtLikeSignal
         //! Creates and starts a GThread executing the specified function. Function is the callable
         //! type and Args its argument types. Thread-safe.
         template <typename Function, typename ... Args>
-        static GThread* create( Function&& f, Args&&... args );
+        static GThread* create( Function&& aF, Args&&... aArgs );
 
     protected:
         virtual void run();
@@ -109,33 +109,33 @@ namespace QtLikeSignal
         //! plumbing, not API. GObject reaches it when adopting a thread's affinity.
         std::shared_ptr<GThreadData> threadData() const
         {
-            return m_data;
+            return mData;
         }
 
         void applyPriority
             (
-            Priority priority
+            Priority aPriority
             );
 
-        std::unique_ptr<std::thread> m_thread;      //!< The underlying OS thread, once started.
-        std::shared_ptr<GThreadData> m_data;        //!< This thread's dispatcher-holding data.
-        std::atomic<bool> m_running { false };      //!< True while the OS thread is executing.
-        std::atomic<bool> m_finished { false };     //!< True once the OS thread has finished.
-        std::atomic<bool> m_exiting { false };      //!< Set by exit()/quit() to stop exec()'s loop.
-        std::atomic<int> m_exitCode { 0 };          //!< Return code passed to exit(), reported by exec().
-        mutable std::mutex m_waitMutex;             //!< Guards m_waitCv's predicate.
-        std::condition_variable m_waitCv;           //!< Notified when the thread finishes, for wait().
+        std::unique_ptr<std::thread> mThread;      //!< The underlying OS thread, once started.
+        std::shared_ptr<GThreadData> mData;        //!< This thread's dispatcher-holding data.
+        std::atomic<bool> mRunning { false };      //!< True while the OS thread is executing.
+        std::atomic<bool> mFinished { false };     //!< True once the OS thread has finished.
+        std::atomic<bool> mExiting { false };      //!< Set by exit()/quit() to stop exec()'s loop.
+        std::atomic<int> mExitCode { 0 };          //!< Return code passed to exit(), reported by exec().
+        mutable std::mutex mWaitMutex;             //!< Guards mWaitCv's predicate.
+        std::condition_variable mWaitCv;           //!< Notified when the thread finishes, for wait().
 
-        //! Guards m_priority and every use of m_thread's native handle.
+        //! Guards mPriority and every use of mThread's native handle.
         //!
-        //! Not merely protecting the enum. The run body clears m_running while holding this mutex, so
-        //! a setPriority() that has observed m_running == true under the same lock is guaranteed the
+        //! Not merely protecting the enum. The run body clears mRunning while holding this mutex, so
+        //! a setPriority() that has observed mRunning == true under the same lock is guaranteed the
         //! OS thread has not yet reached the end of its body -- without that, the handle could be
         //! touched after the thread had exited.
-        mutable std::mutex m_priorityMutex;
-        Priority m_priority { InheritPriority };  //!< Priority applied to the current/most recent run.
+        mutable std::mutex mPriorityMutex;
+        Priority mPriority { InheritPriority };  //!< Priority applied to the current/most recent run.
 
-        static thread_local GThread* s_currentThread;  //!< The GThread running on this OS thread, if any.
+        static thread_local GThread* sCurrentThread;  //!< The GThread running on this OS thread, if any.
         friend class GCoreApplication;
         //! Grants GObject access to threadData() when adopting or releasing thread affinity.
         friend class GObject;
@@ -148,11 +148,11 @@ namespace QtLikeSignal
     template <typename Function, typename ... Args>
     GThread* GThread::create
         (
-        Function&& f,      //!< Function to execute.
-        Args&&... args      //!< Arguments to pass.
+        Function&& aF,      //!< Function to execute.
+        Args&&... aArgs      //!< Arguments to pass.
         )
     {
-        auto task = std::bind( std::forward<Function>( f ), std::forward<Args>( args )... );
+        auto task = std::bind( std::forward<Function>( aF ), std::forward<Args>( aArgs )... );
 
         //! Adapts an arbitrary bound callable into a GThread by running it from run().
         class GFuncThread : public GThread
@@ -160,23 +160,23 @@ namespace QtLikeSignal
         public:
             GFuncThread
                 (
-                std::function<void()> fn
+                std::function<void()> aFn
                 )
-                : m_fn( std::move( fn ) )
+                : mFn( std::move( aFn ) )
             {
             }
 
         protected:
             virtual void run() override
             {
-                if( m_fn )
+                if( mFn )
                 {
-                    m_fn();
+                    mFn();
                 }
             }
 
         private:
-            std::function<void()> m_fn;
+            std::function<void()> mFn;
         };
 
         auto* threadObj = new GFuncThread( task );

@@ -11,68 +11,68 @@
 
 namespace QtLikeSignal
 {
-    GCoreApplication* GCoreApplication::s_instance = nullptr;
+    GCoreApplication* GCoreApplication::sInstance = nullptr;
 
     //! Constructs the application object.
     GCoreApplication::GCoreApplication
         (
-        int& argc,     //!< Argument count.
-        char** argv    //!< Argument vector.
+        int& aArgc,     //!< Argument count.
+        char** aArgv    //!< Argument vector.
         )
         : GObject()
     {
-        ( void )argc;
-        ( void )argv;
-        s_instance = this;
+        ( void )aArgc;
+        ( void )aArgv;
+        sInstance = this;
 
         #if defined( _WIN32 )
-            m_dispatcher = std::make_shared<GEventDispatcherWin32>();
+            mDispatcher = std::make_shared<GEventDispatcherWin32>();
         #elif defined( __linux__ )
-            m_dispatcher = std::make_shared<GEventDispatcherLinux>();
+            mDispatcher = std::make_shared<GEventDispatcherLinux>();
         #else
-            m_dispatcher = std::make_shared<GEventDispatcherDefault>();
+            mDispatcher = std::make_shared<GEventDispatcherDefault>();
         #endif
-        m_mainThread = std::make_unique<GThread>();
+        mMainThread = std::make_unique<GThread>();
 
-        m_mainThread->m_data->setDispatcher( m_dispatcher );
-        GThread::s_currentThread = m_mainThread.get();
+        mMainThread->mData->setDispatcher( mDispatcher );
+        GThread::sCurrentThread = mMainThread.get();
 
         // Self-adopt, mirroring exactly what GThread::start()'s lambda does for a worker thread
-        // (s_currentThread = this; this->moveToThread(this);). Without this, m_mainThread's own
-        // GObject-inherited thread affinity (m_threadData, set via moveToThread) never gets pointed
-        // at its own dispatcher-holding GThreadData (m_data) -- those are two separate fields that
+        // (sCurrentThread = this; this->moveToThread(this);). Without this, mMainThread's own
+        // GObject-inherited thread affinity (mThreadData, set via moveToThread) never gets pointed
+        // at its own dispatcher-holding GThreadData (mData) -- those are two separate fields that
         // only coincide once an object has been moved onto itself. Anything that targets the
         // GThread object directly (dispatchMetaCall(mainThreadPtr, ...), e.g. via GThread::post())
         // would silently fail to find a dispatcher without this, even though one exists.
-        m_mainThread->moveToThread( m_mainThread.get() );
+        mMainThread->moveToThread( mMainThread.get() );
 
-        this->moveToThread( m_mainThread.get() );
+        this->moveToThread( mMainThread.get() );
     }
 
     //! Destroys the application object.
     GCoreApplication::~GCoreApplication()
     {
         this->moveToThread( nullptr );
-        m_mainThread->m_data->setDispatcher( nullptr );
-        GThread::s_currentThread = nullptr;
-        s_instance = nullptr;
+        mMainThread->mData->setDispatcher( nullptr );
+        GThread::sCurrentThread = nullptr;
+        sInstance = nullptr;
     }
 
     //! Returns the global application instance. Thread-safe.
     GCoreApplication* GCoreApplication::instance()
     {
-        return s_instance;
+        return sInstance;
     }
 
     //! Enters the main event loop and waits until quit() is called. Returns the exit code.
     int GCoreApplication::exec()
     {
-        m_exiting.store( false );
-        if( m_dispatcher )
+        mExiting.store( false );
+        if( mDispatcher )
         {
-            while( !m_exiting.load() )
+            while( !mExiting.load() )
             {
-                m_dispatcher->processEvents();
+                mDispatcher->processEvents();
             }
         }
         return 0;
@@ -81,11 +81,11 @@ namespace QtLikeSignal
     //! Tells the application to exit with return code 0. Thread-safe.
     void GCoreApplication::quit()
     {
-        m_exiting.store( true );
-        if( m_dispatcher )
+        mExiting.store( true );
+        if( mDispatcher )
         {
-            m_dispatcher->interrupt();
-            m_dispatcher->wakeUp();
+            mDispatcher->interrupt();
+            mDispatcher->wakeUp();
         }
     }
 }

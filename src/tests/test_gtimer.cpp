@@ -17,26 +17,26 @@ public:
     //! Slot called when timer expires.
     void onTimeout()
     {
-        m_fired = true;
-        m_fireCount++;
+        mFired = true;
+        mFireCount++;
     }
 
     //! Checks if slot was called. Returns true if fired.
     bool wasFired() const
     {
-        return m_fired;
+        return mFired;
     }
 
     //! Gets total fire count. Returns the fire count.
     int fireCount() const
     {
-        return m_fireCount;
+        return mFireCount;
     }
 
 private:
     // Atomic so this test thread can poll them while the worker thread writes them.
-    std::atomic<bool> m_fired { false };
-    std::atomic<int>  m_fireCount { 0 };
+    std::atomic<bool> mFired { false };
+    std::atomic<int>  mFireCount { 0 };
 };
 
 //! Test timer subclass to verify manual event handling.
@@ -46,10 +46,10 @@ public:
     //! Invokes protected timerEvent for test verification.
     void triggerTimerEvent
         (
-        GTimerEvent* ev  //!< Timer event.
+        GTimerEvent* aEv  //!< Timer event.
         )
     {
-        timerEvent( ev );
+        timerEvent( aEv );
     }
 
 };
@@ -101,11 +101,11 @@ TEST( GTimerTest, StartAndStop )
 //! Starts a worker thread running an event loop and blocks until its dispatcher exists.
 static void startWorkerAndWaitForDispatcher
     (
-    GThread& thread  //!< The thread to start.
+    GThread& aThread  //!< The thread to start.
     )
 {
-    thread.start();
-    while( !thread.eventDispatcher() )
+    aThread.start();
+    while( !aThread.eventDispatcher() )
     {
         std::this_thread::yield();
     }
@@ -120,7 +120,7 @@ static void startWorkerAndWaitForDispatcher
 //! way to delete its receiver. ASan/LSan reports it, so the tests must not race it.
 static void drainQueuedEvents
     (
-    GObject& context  //!< Object whose thread's event loop should be drained.
+    GObject& aContext  //!< Object whose thread's event loop should be drained.
     )
 {
     std::promise<void> syncPromise;
@@ -128,7 +128,7 @@ static void drainQueuedEvents
     GSignal<>          syncSignal;
     GObject::connect(
         syncSignal,
-        &context,
+        &aContext,
         [&syncPromise]()
         {
             syncPromise.set_value();

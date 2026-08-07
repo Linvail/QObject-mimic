@@ -39,30 +39,30 @@ namespace QtLikeSignal
         // remaining gap for a caller holding a GEventDispatcherDefault* directly.
         virtual void registerTimer
             (
-            int timerId,
-            int interval,
-            GObject* object
+            int aTimerId,
+            int aInterval,
+            GObject* aObject
             ) override;
 
         virtual bool unregisterTimer
             (
-            int timerId
+            int aTimerId
             ) override;
 
         virtual void postEvent
             (
-            GObject* receiver,
-            GEvent* event
+            GObject* aReceiver,
+            GEvent* aEvent
             ) override;
 
         virtual void removeEventsForReceiver
             (
-            GObject* receiver
+            GObject* aReceiver
             ) override;
 
         virtual std::vector<TimerRegistration> takeTimersForReceiver
             (
-            GObject* receiver
+            GObject* aReceiver
             ) override;
 
         friend class GObject;
@@ -71,32 +71,32 @@ namespace QtLikeSignal
         //! One queued event together with the receiver it targets.
         struct EventPair
         {
-            GObject* receiver;
-            GEvent*  event;
+            GObject* mReceiver;
+            GEvent*  mEvent;
         };
 
         //! One registered timer's schedule and target.
         struct TimerData
         {
-            int timerId;
-            int intervalMs;
-            GObject*                              receiver;
-            std::chrono::steady_clock::time_point nextFire;
+            int mTimerId;
+            int mIntervalMs;
+            GObject*                              mReceiver;
+            std::chrono::steady_clock::time_point mNextFire;
         };
 
-        std::deque<EventPair>   m_eventQueue;  //!< Events waiting to be dispatched.
-        std::vector<TimerData>  m_timers;      //!< Every timer currently registered.
-        std::mutex m_mutex;                    //!< Guards every member below.
-        std::condition_variable m_cv;          //!< Wakes processEvents() out of its wait.
-        std::atomic<bool>       m_interrupt { false };  //!< Set by interrupt() to stop the loop.
-        // Set (under m_mutex) whenever a timer is registered or unregistered, so a processEvents()
+        std::deque<EventPair>   mEventQueue;  //!< Events waiting to be dispatched.
+        std::vector<TimerData>  mTimers;      //!< Every timer currently registered.
+        std::mutex mMutex;                    //!< Guards every member below.
+        std::condition_variable mCv;          //!< Wakes processEvents() out of its wait.
+        std::atomic<bool>       mInterrupt { false };  //!< Set by interrupt() to stop the loop.
+        // Set (under mMutex) whenever a timer is registered or unregistered, so a processEvents()
         // call currently sleeping in wait_for() re-evaluates its wait deadline instead of sleeping
         // for the stale duration computed before the change.
-        bool m_timersChanged { false };
-        // Set (under m_mutex) by wakeUp() and consumed by processEvents() once it returns from
+        bool mTimersChanged { false };
+        // Set (under mMutex) by wakeUp() and consumed by processEvents() once it returns from
         // waiting. Needed because the wait is predicate-based: without a state change to observe, a
         // bare notify_all() from wakeUp() cannot end the wait.
-        bool m_wakeUpRequested { false };
+        bool mWakeUpRequested { false };
     };
 }
 

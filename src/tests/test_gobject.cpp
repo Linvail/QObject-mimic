@@ -19,107 +19,107 @@ public:
     //! Slot for integer parameter signals.
     void onValueReceived
         (
-        int val  //!< Received value.
+        int aVal  //!< Received value.
         )
     {
-        m_lastValue = val;
-        m_callCount++;
-        m_executedThread = GThread::currentThread();
+        mLastValue = aVal;
+        mCallCount++;
+        mExecutedThread = GThread::currentThread();
     }
 
     //! Used to test overloaded slots.
     void onValueReceived
         (
-        int val1,  //!< First value.
-        int val2   //!< Second value.
+        int aVal1,  //!< First value.
+        int aVal2   //!< Second value.
         )
     {
-        m_lastValue = val1 + val2;
-        m_callCount++;
-        m_executedThread = GThread::currentThread();
+        mLastValue = aVal1 + aVal2;
+        mCallCount++;
+        mExecutedThread = GThread::currentThread();
     }
 
     //! Slot with non-void return type. Returns value plus 1.
     int onValueNonVoidReturn
         (
-        int val  //!< Value to return.
+        int aVal  //!< Value to return.
         )
     {
-        m_lastValue = val;
-        m_callCount++;
-        m_executedThread = GThread::currentThread();
-        return m_lastValue;
+        mLastValue = aVal;
+        mCallCount++;
+        mExecutedThread = GThread::currentThread();
+        return mLastValue;
     }
 
     //! Slot taking const reference.
     void onStringConstReference
         (
-        const std::string& str  //!< String value.
+        const std::string& aStr  //!< String value.
         )
     {
-        m_lastString = str;
-        m_callCount++;
-        m_executedThread = GThread::currentThread();
+        mLastString = aStr;
+        mCallCount++;
+        mExecutedThread = GThread::currentThread();
     }
 
     //! Slot taking multiple arguments.
     void onMultiArg
         (
-        int a,          //!< Int argument.
-        std::string b,  //!< String argument.
-        double c        //!< Double argument.
+        int aA,          //!< Int argument.
+        std::string aB,  //!< String argument.
+        double aC        //!< Double argument.
         )
     {
-        m_lastInt    = a;
-        m_lastString = b;
-        m_lastDouble = c;
-        m_callCount++;
-        m_executedThread = GThread::currentThread();
+        mLastInt    = aA;
+        mLastString = aB;
+        mLastDouble = aC;
+        mCallCount++;
+        mExecutedThread = GThread::currentThread();
     }
 
     //! Gets the total call count.
     int callCount() const
     {
-        return m_callCount;
+        return mCallCount;
     }
 
     //! Gets the last received value.
     int lastValue() const
     {
-        return m_lastValue;
+        return mLastValue;
     }
 
     //! Gets the last received int.
     int lastInt() const
     {
-        return m_lastInt;
+        return mLastInt;
     }
 
     //! Gets the last received string.
     const std::string& lastString() const
     {
-        return m_lastString;
+        return mLastString;
     }
 
     //! Gets the last received double.
     double lastDouble() const
     {
-        return m_lastDouble;
+        return mLastDouble;
     }
 
     //! Gets the thread on which the slot was executed. Returns a pointer to the thread.
     GThread* executedThread() const
     {
-        return m_executedThread;
+        return mExecutedThread;
     }
 
 private:
-    int m_callCount { 0 };
-    int m_lastValue { 0 };
-    int m_lastInt { 0 };
-    std::string m_lastString;
-    double m_lastDouble { 0.0 };
-    GThread*    m_executedThread { nullptr };
+    int mCallCount { 0 };
+    int mLastValue { 0 };
+    int mLastInt { 0 };
+    std::string mLastString;
+    double mLastDouble { 0.0 };
+    GThread*    mExecutedThread { nullptr };
 };
 
 //! Tests direct signal-slot connection and emission.
@@ -231,9 +231,9 @@ TEST( GObjectTest, LambdaSlotConnection )
     GObject::connect(
         sig,
         &context,
-        [&receivedValue, &callCount]( int val )
+        [&receivedValue, &callCount]( int aVal )
         {
-            receivedValue = val;
+            receivedValue = aVal;
             callCount++;
         },
         G::DirectConnection );
@@ -364,9 +364,9 @@ TEST( GObjectTest, CrossThreadLambdaConnection )
     GObject::connect(
         sig,
         &context,
-        [&receivedMsg, &executedInThread, &workerThread]( std::string msg )
+        [&receivedMsg, &executedInThread, &workerThread]( std::string aMsg )
         {
-            receivedMsg      = msg;
+            receivedMsg      = aMsg;
             executedInThread = GThread::currentThread();
             workerThread.quit();
         },
@@ -549,10 +549,10 @@ static int g_testFreeFuncLastVal = 0;
 //! Free function used for testing GObject::callLater free function overload.
 static void testCallLaterFreeFunc
     (
-    int val  //!< Received test value.
+    int aVal  //!< Received test value.
     )
 {
-    g_testFreeFuncLastVal = val;
+    g_testFreeFuncLastVal = aVal;
     g_testFreeFuncCount++;
 }
 

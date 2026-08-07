@@ -4,10 +4,10 @@
 //! otherwise.
 int main
     (
-    int argc,     //!< Command line argument count.
-    char** argv   //!< Command line argument vector.
+    int aArgc,     //!< Command line argument count.
+    char** aArgv   //!< Command line argument vector.
     )
 {
-    ::testing::InitGoogleTest( &argc, argv );
+    ::testing::InitGoogleTest( &aArgc, aArgv );
     return RUN_ALL_TESTS();
 }

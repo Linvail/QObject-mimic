@@ -19,41 +19,41 @@ namespace QtLikeSignal
         //! Connects a callable slot to this signal. Thread-safe.
         G::ConnectionHandle connect
             (
-            std::function<void( Args... )> slot  //!< The callable slot function.
+            std::function<void( Args... )> aSlot  //!< The callable slot function.
             )
         {
-            return m_signal.connect( slot );
+            return mSignal.connect( aSlot );
         }
 
         //! Disconnects a connection by handle. Thread-safe.
         void disconnect
             (
-            const G::ConnectionHandle& connection  //!< The connection handle to disconnect.
+            const G::ConnectionHandle& aConnection  //!< The connection handle to disconnect.
             )
         {
-            connection.disconnect();
+            aConnection.disconnect();
         }
 
         //! Emits the signal with the specified arguments. Thread-safe.
         void emit
             (
-            Args... args  //!< Arguments to pass to all connected slots.
+            Args... aArgs  //!< Arguments to pass to all connected slots.
             )
         {
-            m_signal( args ... );
+            mSignal( aArgs ... );
         }
 
         //! Function call operator to emit the signal. Thread-safe.
         void operator()
             (
-            Args... args  //!< Arguments to pass to all connected slots.
+            Args... aArgs  //!< Arguments to pass to all connected slots.
             )
         {
-            m_signal( args ... );
+            mSignal( aArgs ... );
         }
 
     private:
-        boost::signals2::signal<void( Args... )> m_signal;
+        boost::signals2::signal<void( Args... )> mSignal;
     };
 
     namespace G

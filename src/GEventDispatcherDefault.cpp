@@ -12,11 +12,11 @@ namespace QtLikeSignal
     //! Destroys the default event dispatcher and frees pending events.
     GEventDispatcherDefault::~GEventDispatcherDefault()
     {
-        std::lock_guard<std::mutex> lock( m_mutex );
-        while( !m_eventQueue.empty() )
+        std::lock_guard<std::mutex> lock( mMutex );
+        while( !mEventQueue.empty() )
         {
-            delete m_eventQueue.front().event;
-            m_eventQueue.pop_front();
+            delete mEventQueue.front().mEvent;
+            mEventQueue.pop_front();
         }
     }
 
@@ -26,7 +26,7 @@ namespace QtLikeSignal
     //! Thread-safe. Called by thread event loop.
     bool GEventDispatcherDefault::processEvents()
     {
-        if( m_interrupt )
+        if( mInterrupt )
         {
             return false;
         }
@@ -36,31 +36,32 @@ namespace QtLikeSignal
         std::chrono::milliseconds maxWait { 100 };
 
         {
-            std::unique_lock<std::mutex> lock( m_mutex );
+            std::unique_lock<std::mutex> lock( mMutex );
 
             auto now = std::chrono::steady_clock::now();
 
             // Collect expired timers
-            for( auto& t : m_timers )
+            for( auto& t : mTimers )
             {
-                if( now >= t.nextFire )
+                if( now >= t.mNextFire )
                 {
-                    timerEventsToProcess.push_back( { t.receiver, new GTimerEvent( t.timerId ) } );
-                    t.nextFire = now + std::chrono::milliseconds( t.intervalMs );
+                    timerEventsToProcess.push_back( { t.mReceiver, new GTimerEvent( t.mTimerId ) } )
+                    ;
+                    t.mNextFire = now + std::chrono::milliseconds( t.mIntervalMs );
                 }
             }
 
             // Determine wait time for next timer if no events present
-            if( m_eventQueue.empty() && timerEventsToProcess.empty() )
+            if( mEventQueue.empty() && timerEventsToProcess.empty() )
             {
-                if( !m_timers.empty() )
+                if( !mTimers.empty() )
                 {
-                    auto minFire = m_timers.front().nextFire;
-                    for( const auto& t : m_timers )
+                    auto minFire = mTimers.front().mNextFire;
+                    for( const auto& t : mTimers )
                     {
-                        if( t.nextFire < minFire )
+                        if( t.mNextFire < minFire )
                         {
-                            minFire = t.nextFire;
+                            minFire = t.mNextFire;
                         }
                     }
                     if( minFire > now )
@@ -75,55 +76,55 @@ namespace QtLikeSignal
                     }
                 }
 
-                // Clear the change flag right before waiting, still holding m_mutex, so any
+                // Clear the change flag right before waiting, still holding mMutex, so any
                 // registerTimer()/unregisterTimer() call that runs concurrently is guaranteed to
                 // either land before this point (already reflected in maxWait above) or after
-                // (blocked on m_mutex until we release it inside wait_for, then setting the flag and
+                // (blocked on mMutex until we release it inside wait_for, then setting the flag and
                 // notifying) -- there is no window where a change can be lost.
-                m_timersChanged = false;
+                mTimersChanged = false;
 
                 auto wakeCondition = [this]
                     {
-                        return !m_eventQueue.empty() || m_interrupt || m_timersChanged
-                               || m_wakeUpRequested;
+                        return !mEventQueue.empty() || mInterrupt || mTimersChanged
+                               || mWakeUpRequested;
                     };
 
-                if( m_timers.empty() )
+                if( mTimers.empty() )
                 {
                     // Nothing is scheduled, so there is no deadline to poll for: block until
                     // something actually happens rather than waking ten times a second forever.
-                    // Every state this predicate tests is changed under m_mutex by a caller that
+                    // Every state this predicate tests is changed under mMutex by a caller that
                     // then notifies (postEvent, registerTimer, unregisterTimer, interrupt, wakeUp),
                     // so there is no wakeup to miss.
-                    m_cv.wait( lock, wakeCondition );
+                    mCv.wait( lock, wakeCondition );
                 }
                 else
                 {
-                    m_cv.wait_for( lock, maxWait, wakeCondition );
+                    mCv.wait_for( lock, maxWait, wakeCondition );
                 }
 
                 // wakeUp() is a one-shot "return from the wait now" request; consume it so a later
                 // processEvents() call does not treat it as still pending.
-                m_wakeUpRequested = false;
+                mWakeUpRequested = false;
             }
 
-            if( m_interrupt )
+            if( mInterrupt )
             {
                 // timerEventsToProcess may already hold heap-allocated GTimerEvent objects collected
                 // above; they were never handed off to the dispatch loop below, so free them here to
                 // avoid leaking them.
                 for( auto& ep : timerEventsToProcess )
                 {
-                    delete ep.event;
+                    delete ep.mEvent;
                 }
                 return false;
             }
 
             // Drain current queued events
-            while( !m_eventQueue.empty() )
+            while( !mEventQueue.empty() )
             {
-                eventsToProcess.push_back( m_eventQueue.front() );
-                m_eventQueue.pop_front();
+                eventsToProcess.push_back( mEventQueue.front() );
+                mEventQueue.pop_front();
             }
         }
 
@@ -139,43 +140,43 @@ namespace QtLikeSignal
         // Dispatch queued events
         for( const auto& ep : eventsToProcess )
         {
-            if( !ep.receiver || !ep.event )
+            if( !ep.mReceiver || !ep.mEvent )
             {
-                delete ep.event;
+                delete ep.mEvent;
                 continue;
             }
-            if( deletedReceivers.count( ep.receiver ) )
+            if( deletedReceivers.count( ep.mReceiver ) )
             {
-                delete ep.event;
+                delete ep.mEvent;
                 continue;
             }
 
-            const bool isDeferredDelete = ( ep.event->type() == GEvent::DeferredDelete );
-            ep.receiver->event( ep.event );
+            const bool isDeferredDelete = ( ep.mEvent->type() == GEvent::DeferredDelete );
+            ep.mReceiver->event( ep.mEvent );
             if( isDeferredDelete )
             {
-                deletedReceivers.insert( ep.receiver );
+                deletedReceivers.insert( ep.mReceiver );
             }
-            delete ep.event;
+            delete ep.mEvent;
             processedAny = true;
         }
 
         // Dispatch timer events
         for( const auto& ep : timerEventsToProcess )
         {
-            if( !ep.receiver || !ep.event )
+            if( !ep.mReceiver || !ep.mEvent )
             {
-                delete ep.event;
+                delete ep.mEvent;
                 continue;
             }
-            if( deletedReceivers.count( ep.receiver ) )
+            if( deletedReceivers.count( ep.mReceiver ) )
             {
-                delete ep.event;
+                delete ep.mEvent;
                 continue;
             }
 
-            ep.receiver->event( ep.event );
-            delete ep.event;
+            ep.mReceiver->event( ep.mEvent );
+            delete ep.mEvent;
             processedAny = true;
         }
 
@@ -185,58 +186,58 @@ namespace QtLikeSignal
     //! Registers a timer for a target object. Thread-safe.
     void GEventDispatcherDefault::registerTimer
         (
-        int timerId,     //!< Unique timer identifier.
-        int interval,    //!< Interval in milliseconds.
-        GObject* object  //!< Target object to receive GTimerEvent.
+        int aTimerId,     //!< Unique timer identifier.
+        int aInterval,    //!< Interval in milliseconds.
+        GObject* aObject  //!< Target object to receive GTimerEvent.
         )
     {
-        if( !object || interval < 0 )
+        if( !aObject || aInterval < 0 )
         {
             return;
         }
 
-        std::lock_guard<std::mutex> lock( m_mutex );
+        std::lock_guard<std::mutex> lock( mMutex );
         auto now = std::chrono::steady_clock::now();
         TimerData td;
-        td.timerId    = timerId;
-        td.intervalMs = interval;
-        td.receiver   = object;
-        td.nextFire   = now + std::chrono::milliseconds( interval );
+        td.mTimerId    = aTimerId;
+        td.mIntervalMs = aInterval;
+        td.mReceiver   = aObject;
+        td.mNextFire   = now + std::chrono::milliseconds( aInterval );
 
-        for( auto& t : m_timers )
+        for( auto& t : mTimers )
         {
-            if( t.timerId == timerId )
+            if( t.mTimerId == aTimerId )
             {
                 t             = td;
-                m_timersChanged = true;
-                m_cv.notify_all();
+                mTimersChanged = true;
+                mCv.notify_all();
                 return;
             }
         }
-        m_timers.push_back( td );
-        m_timersChanged = true;
-        m_cv.notify_all();
+        mTimers.push_back( td );
+        mTimersChanged = true;
+        mCv.notify_all();
     }
 
     //! Unregisters a timer by ID. Returns true if timer was found and removed, false otherwise.
     //! Thread-safe.
     bool GEventDispatcherDefault::unregisterTimer
         (
-        int timerId  //!< Unique timer identifier.
+        int aTimerId  //!< Unique timer identifier.
         )
     {
-        std::lock_guard<std::mutex> lock( m_mutex );
-        auto it = std::remove_if( m_timers.begin(),
-            m_timers.end(),
-            [timerId]( const TimerData& td )
+        std::lock_guard<std::mutex> lock( mMutex );
+        auto it = std::remove_if( mTimers.begin(),
+            mTimers.end(),
+            [aTimerId]( const TimerData& aTd )
             {
-                return td.timerId == timerId;
+                return aTd.mTimerId == aTimerId;
             } );
-        if( it != m_timers.end() )
+        if( it != mTimers.end() )
         {
-            m_timers.erase( it, m_timers.end() );
-            m_timersChanged = true;
-            m_cv.notify_all();
+            mTimers.erase( it, mTimers.end() );
+            mTimersChanged = true;
+            mCv.notify_all();
             return true;
         }
         return false;
@@ -245,57 +246,57 @@ namespace QtLikeSignal
     //! Thread-safely posts an event to the dispatcher's queue.
     void GEventDispatcherDefault::postEvent
         (
-        GObject* receiver,  //!< The target object receiving the event.
-        GEvent* event       //!< The event to be dispatched.
+        GObject* aReceiver,  //!< The target object receiving the event.
+        GEvent* aEvent       //!< The event to be dispatched.
         )
     {
-        if( !receiver || !event )
+        if( !aReceiver || !aEvent )
         {
-            delete event;
+            delete aEvent;
             return;
         }
 
         {
-            std::lock_guard<std::mutex> lock( m_mutex );
-            m_eventQueue.push_back( { receiver, event } );
+            std::lock_guard<std::mutex> lock( mMutex );
+            mEventQueue.push_back( { aReceiver, aEvent } );
         }
-        m_cv.notify_all();
+        mCv.notify_all();
     }
 
     //! Removes and deletes all pending events for the specified receiver. Thread-safe.
     void GEventDispatcherDefault::removeEventsForReceiver
         (
-        GObject* receiver  //!< The target receiver object.
+        GObject* aReceiver  //!< The target receiver object.
         )
     {
-        if( !receiver )
+        if( !aReceiver )
         {
             return;
         }
 
-        std::lock_guard<std::mutex> lock( m_mutex );
+        std::lock_guard<std::mutex> lock( mMutex );
 
-        auto itQueue = std::remove_if( m_eventQueue.begin(),
-            m_eventQueue.end(),
-            [receiver]( const EventPair& ep )
+        auto itQueue = std::remove_if( mEventQueue.begin(),
+            mEventQueue.end(),
+            [aReceiver]( const EventPair& aEp )
             {
-                if( ep.receiver == receiver )
+                if( aEp.mReceiver == aReceiver )
                 {
-                    delete ep.event;
+                    delete aEp.mEvent;
                     return true;
                 }
                 return false;
             } );
-        m_eventQueue.erase( itQueue, m_eventQueue.end() );
+        mEventQueue.erase( itQueue, mEventQueue.end() );
 
         auto itTimer
-            = std::remove_if( m_timers.begin(),
-            m_timers.end(),
-            [receiver]( const TimerData& td )
+            = std::remove_if( mTimers.begin(),
+            mTimers.end(),
+            [aReceiver]( const TimerData& aTd )
             {
-                return td.receiver == receiver;
+                return aTd.mReceiver == aReceiver;
             } );
-        m_timers.erase( itTimer, m_timers.end() );
+        mTimers.erase( itTimer, mTimers.end() );
     }
 
     //! Unregisters the receiver's timers and returns them for re-registration elsewhere. Returns
@@ -303,34 +304,34 @@ namespace QtLikeSignal
     std::vector<GAbstractEventDispatcher::TimerRegistration>GEventDispatcherDefault::
     takeTimersForReceiver
         (
-        GObject* receiver  //!< The receiver whose timers should be taken.
+        GObject* aReceiver  //!< The receiver whose timers should be taken.
         )
     {
         std::vector<TimerRegistration> taken;
-        if( !receiver )
+        if( !aReceiver )
         {
             return taken;
         }
 
-        std::lock_guard<std::mutex> lock( m_mutex );
+        std::lock_guard<std::mutex> lock( mMutex );
 
-        auto it = std::remove_if( m_timers.begin(),
-            m_timers.end(),
-            [receiver, &taken]( const TimerData& td )
+        auto it = std::remove_if( mTimers.begin(),
+            mTimers.end(),
+            [aReceiver, &taken]( const TimerData& aTd )
             {
-                if( td.receiver != receiver )
+                if( aTd.mReceiver != aReceiver )
                 {
                     return false;
                 }
-                taken.push_back( { td.timerId, td.intervalMs } );
+                taken.push_back( { aTd.mTimerId, aTd.mIntervalMs } );
                 return true;
             } );
-        if( it != m_timers.end() )
+        if( it != mTimers.end() )
         {
-            m_timers.erase( it, m_timers.end() );
+            mTimers.erase( it, mTimers.end() );
             // The wait deadline was computed from a timer list that no longer holds these entries.
-            m_timersChanged = true;
-            m_cv.notify_all();
+            mTimersChanged = true;
+            mCv.notify_all();
         }
 
         return taken;
@@ -353,13 +354,13 @@ namespace QtLikeSignal
         {
             std::vector<EventPair> deferredDeletes;
             {
-                std::lock_guard<std::mutex> lock( m_mutex );
-                for( auto it = m_eventQueue.begin(); it != m_eventQueue.end();)
+                std::lock_guard<std::mutex> lock( mMutex );
+                for( auto it = mEventQueue.begin(); it != mEventQueue.end();)
                 {
-                    if( it->event && it->event->type() == GEvent::DeferredDelete )
+                    if( it->mEvent && it->mEvent->type() == GEvent::DeferredDelete )
                     {
                         deferredDeletes.push_back(*it );
-                        it = m_eventQueue.erase( it );
+                        it = mEventQueue.erase( it );
                     }
                     else
                     {
@@ -373,15 +374,15 @@ namespace QtLikeSignal
                 break;
             }
 
-            // Dispatch with m_mutex released: ~GObject() calls removeEventsForReceiver(), which takes
+            // Dispatch with mMutex released: ~GObject() calls removeEventsForReceiver(), which takes
             // the same non-recursive mutex and would otherwise deadlock.
             for( const auto& ep : deferredDeletes )
             {
-                if( ep.receiver && deletedReceivers.insert( ep.receiver ).second )
+                if( ep.mReceiver && deletedReceivers.insert( ep.mReceiver ).second )
                 {
-                    ep.receiver->event( ep.event );
+                    ep.mReceiver->event( ep.mEvent );
                 }
-                delete ep.event;
+                delete ep.mEvent;
             }
         }
     }
@@ -389,30 +390,30 @@ namespace QtLikeSignal
     //! Wakes up the event loop if waiting. Thread-safe.
     void GEventDispatcherDefault::wakeUp()
     {
-        // The flag must be set under m_mutex, not just notified. processEvents() waits on a
+        // The flag must be set under mMutex, not just notified. processEvents() waits on a
         // predicate, so a bare notify_all() is a no-op unless some state the predicate tests has
         // changed -- previously wakeUp() only ever "worked" because the wait was capped at 100ms and
         // would have returned on its own anyway.
         {
-            std::lock_guard<std::mutex> lock( m_mutex );
-            m_wakeUpRequested = true;
+            std::lock_guard<std::mutex> lock( mMutex );
+            mWakeUpRequested = true;
         }
-        m_cv.notify_all();
+        mCv.notify_all();
     }
 
     //! Interrupts processEvents execution. Thread-safe.
     void GEventDispatcherDefault::interrupt()
     {
-        // Taking m_mutex here is what makes the unbounded wait in processEvents() safe. Setting the
+        // Taking mMutex here is what makes the unbounded wait in processEvents() safe. Setting the
         // atomic without the lock leaves a lost-wakeup window: a waiter that has already evaluated
         // its predicate as false, but has not yet atomically released the lock and blocked, would
         // miss both the flag and the notification. That was survivable while the wait was capped at
-        // 100ms; with no cap it would hang forever. Blocking on m_mutex here means this can only
+        // 100ms; with no cap it would hang forever. Blocking on mMutex here means this can only
         // land either fully before the predicate check or after the waiter is genuinely blocked.
         {
-            std::lock_guard<std::mutex> lock( m_mutex );
-            m_interrupt = true;
+            std::lock_guard<std::mutex> lock( mMutex );
+            mInterrupt = true;
         }
-        m_cv.notify_all();
+        mCv.notify_all();
     }
 }

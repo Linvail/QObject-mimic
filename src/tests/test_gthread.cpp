@@ -17,18 +17,18 @@ protected:
     virtual void run() override
     {
         std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
-        m_executed = true;
+        mExecuted = true;
     }
 
 public:
     //! Checks if run() executed. Returns true if run() completed.
     bool wasExecuted() const
     {
-        return m_executed;
+        return mExecuted;
     }
 
 private:
-    bool m_executed { false };
+    bool mExecuted { false };
 };
 
 //! Thread subclass for testing GThread::currentThread() pointer.
@@ -37,18 +37,18 @@ class ThreadPointerCheckThread : public GThread
 protected:
     virtual void run() override
     {
-        m_selfPointer = GThread::currentThread();
+        mSelfPointer = GThread::currentThread();
     }
 
 public:
     //! Gets the captured currentThread pointer. Returns the captured thread pointer.
     GThread* selfPointer() const
     {
-        return m_selfPointer;
+        return mSelfPointer;
     }
 
 private:
-    GThread* m_selfPointer { nullptr };
+    GThread* mSelfPointer { nullptr };
 };
 
 //! Thread subclass for testing exit code signaling.

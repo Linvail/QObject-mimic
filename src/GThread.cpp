@@ -26,7 +26,7 @@
 
 namespace QtLikeSignal
 {
-    thread_local GThread* GThread::s_currentThread = nullptr;
+    thread_local GThread* GThread::sCurrentThread = nullptr;
 
     #if !defined( _WIN32 ) && defined( G_HAS_THREAD_PRIORITY_SCHEDULING )
 
@@ -43,17 +43,17 @@ namespace QtLikeSignal
             //! platform would not report a range.
             bool calculateUnixPriority
                 (
-                int priority,          //!< The GThread priority to convert.
-                int* schedPolicy,      //!< In: the thread's current policy. Out: the policy to apply, which
-                                       //!< only changes when IdlePriority selects SCHED_IDLE.
-                int* schedPriority     //!< Out: the priority number to apply under that policy.
+                int aPriority,          //!< The GThread priority to convert.
+                int* aSchedPolicy,      //!< In: the thread's current policy. Out: the policy to apply, which
+                                        //!< only changes when IdlePriority selects SCHED_IDLE.
+                int* aSchedPriority     //!< Out: the priority number to apply under that policy.
                 )
             {
                 #ifdef SCHED_IDLE
-                    if( priority == GThread::IdlePriority )
+                    if( aPriority == GThread::IdlePriority )
                     {
-                        *schedPolicy = SCHED_IDLE;
-                        *schedPriority = 0;
+                        *aSchedPolicy = SCHED_IDLE;
+                        *aSchedPriority = 0;
                         return true;
                     }
                     const int lowestPriority = GThread::LowestPriority;
@@ -62,14 +62,15 @@ namespace QtLikeSignal
                 #endif
                 const int highestPriority = GThread::TimeCriticalPriority;
 
-                const int prioMin = sched_get_priority_min( *schedPolicy );
-                const int prioMax = sched_get_priority_max( *schedPolicy );
+                const int prioMin = sched_get_priority_min( *aSchedPolicy );
+                const int prioMax = sched_get_priority_max( *aSchedPolicy );
                 if( prioMin == -1 || prioMax == -1 )
                 {
                     return false;
                 }
 
-                int prio = ( ( priority - lowestPriority ) * ( prioMax - prioMin ) / highestPriority
+                int prio = ( ( aPriority - lowestPriority ) * ( prioMax - prioMin ) /
+                    highestPriority
                            ) +
                     prioMin;
                 if( prio < prioMin )
@@ -81,7 +82,7 @@ namespace QtLikeSignal
                     prio = prioMax;
                 }
 
-                *schedPriority = prio;
+                *aSchedPriority = prio;
                 return true;
             }
 
@@ -93,7 +94,7 @@ namespace QtLikeSignal
     GThread::GThread()
         : GObject()
     {
-        m_data = std::make_shared<GThreadData>();
+        mData = std::make_shared<GThreadData>();
     }
 
     //! Destroys the thread, waiting for it to finish if running.
@@ -117,64 +118,64 @@ namespace QtLikeSignal
     //! thread's priority. Nothing belonging to this class runs in that window.
     void GThread::start
         (
-        Priority priority  //!< Priority for the new thread. InheritPriority, the default, keeps the
-                           //!< creating thread's priority and preserves the behaviour of the
-                           //!< no-argument call.
+        Priority aPriority  //!< Priority for the new thread. InheritPriority, the default, keeps the
+                            //!< creating thread's priority and preserves the behaviour of the
+                            //!< no-argument call.
         )
     {
-        if( m_running.load() )
+        if( mRunning.load() )
         {
             return;
         }
 
-        // If a previous run finished but the caller never called wait(), m_thread can still hold a
-        // joinable std::thread. Overwriting m_thread below would destroy that std::thread while it
+        // If a previous run finished but the caller never called wait(), mThread can still hold a
+        // joinable std::thread. Overwriting mThread below would destroy that std::thread while it
         // is still joinable, which calls std::terminate(). Join it first.
-        if( m_thread && m_thread->joinable() )
+        if( mThread && mThread->joinable() )
         {
-            m_thread->join();
+            mThread->join();
         }
 
-        // Held across the std::thread construction so setPriority() can never observe m_running ==
-        // true while m_thread is still the previous run's object (or null). A run body that finishes
+        // Held across the std::thread construction so setPriority() can never observe mRunning ==
+        // true while mThread is still the previous run's object (or null). A run body that finishes
         // before this scope ends simply waits for the lock at its tail.
-        std::lock_guard<std::mutex> startLock( m_priorityMutex );
+        std::lock_guard<std::mutex> startLock( mPriorityMutex );
 
-        m_running.store( true );
-        m_finished.store( false );
-        m_exiting.store( false );
+        mRunning.store( true );
+        mFinished.store( false );
+        mExiting.store( false );
         // Each run starts from what start() was given, never from what the previous run ended at: a
         // priority set on an earlier run said nothing about this one, and reporting the stale value
         // would be a lie about a thread that never got it.
-        m_priority = priority;
+        mPriority = aPriority;
 
-        m_thread = std::make_unique<std::thread>(
+        mThread = std::make_unique<std::thread>(
             [this]()
             {
-                s_currentThread = this;
+                sCurrentThread = this;
                 this->moveToThread( this );
 
                 {
                     // First thing the new thread does, so started() and the whole of run() happen at
                     // the requested priority. It blocks here until start() releases the lock, which
-                    // is also what guarantees m_thread is already assigned -- applyPriority() reads
+                    // is also what guarantees mThread is already assigned -- applyPriority() reads
                     // the native handle out of it.
-                    std::lock_guard<std::mutex> priorityLock( m_priorityMutex );
-                    if( m_priority != InheritPriority )
+                    std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
+                    if( mPriority != InheritPriority )
                     {
-                        applyPriority( m_priority );
+                        applyPriority( mPriority );
                     }
                 }
 
                 bool createdDispatcher = false;
-                if( !m_data->dispatcher() )
+                if( !mData->dispatcher() )
                 {
                     #if defined( _WIN32 )
-                        m_data->setDispatcher( std::make_shared<GEventDispatcherWin32>() );
+                        mData->setDispatcher( std::make_shared<GEventDispatcherWin32>() );
                     #elif defined( __linux__ )
-                        m_data->setDispatcher( std::make_shared<GEventDispatcherLinux>() );
+                        mData->setDispatcher( std::make_shared<GEventDispatcherLinux>() );
                     #else
-                        m_data->setDispatcher( std::make_shared<GEventDispatcherDefault>() );
+                        mData->setDispatcher( std::make_shared<GEventDispatcherDefault>() );
                     #endif
                     createdDispatcher = true;
                 }
@@ -191,7 +192,7 @@ namespace QtLikeSignal
                 // Without this, anything that called deleteLater() before the loop stopped is never
                 // destroyed: the dispatcher's destructor can free the queued events but has no way
                 // to free their receivers.
-                if( auto disp = m_data->dispatcher() )
+                if( auto disp = mData->dispatcher() )
                 {
                     disp->processDeferredDeletes();
                 }
@@ -202,23 +203,23 @@ namespace QtLikeSignal
                     // call still holds its own strong reference from GThreadData::dispatcher(), so
                     // the dispatcher stays alive until that call finishes rather than being freed
                     // underneath it.
-                    m_data->setDispatcher( nullptr );
+                    mData->setDispatcher( nullptr );
                 }
 
                 {
-                    // Under the same mutex setPriority() uses. This is the only place m_running
-                    // becomes false, so a setPriority() holding the lock and seeing m_running == true
+                    // Under the same mutex setPriority() uses. This is the only place mRunning
+                    // becomes false, so a setPriority() holding the lock and seeing mRunning == true
                     // knows this store has not happened yet and the OS thread is still alive -- which
                     // is what makes using the native handle there safe rather than merely likely.
-                    std::lock_guard<std::mutex> priorityLock( m_priorityMutex );
-                    m_running.store( false );
+                    std::lock_guard<std::mutex> priorityLock( mPriorityMutex );
+                    mRunning.store( false );
                 }
-                m_finished.store( true );
+                mFinished.store( true );
                 {
-                    std::lock_guard<std::mutex> lock( m_waitMutex );
-                    m_waitCv.notify_all();
+                    std::lock_guard<std::mutex> lock( mWaitMutex );
+                    mWaitCv.notify_all();
                 }
-                s_currentThread = nullptr;
+                sCurrentThread = nullptr;
             } );
     }
 
@@ -231,12 +232,12 @@ namespace QtLikeSignal
     //! Requests the thread's event loop to exit with specified return code. Thread-safe.
     void GThread::exit
         (
-        int returnCode  //!< Exit return code.
+        int aReturnCode  //!< Exit return code.
         )
     {
-        m_exitCode.store( returnCode );
-        m_exiting.store( true );
-        auto dispatcher = m_data->dispatcher();
+        mExitCode.store( aReturnCode );
+        mExiting.store( true );
+        auto dispatcher = mData->dispatcher();
         if( dispatcher )
         {
             dispatcher->interrupt();
@@ -248,39 +249,39 @@ namespace QtLikeSignal
     //! true if thread finished, false if timeout occurred.
     bool GThread::wait
         (
-        unsigned long time  //!< Maximum time to wait in milliseconds.
+        unsigned long aTime  //!< Maximum time to wait in milliseconds.
         )
     {
-        if( m_finished.load() )
+        if( mFinished.load() )
         {
-            if( m_thread && m_thread->joinable() )
+            if( mThread && mThread->joinable() )
             {
-                m_thread->join();
+                mThread->join();
             }
             return true;
         }
 
-        if( !m_thread || !m_thread->joinable() )
+        if( !mThread || !mThread->joinable() )
         {
             return true;
         }
 
-        if( time == ULONG_MAX )
+        if( aTime == ULONG_MAX )
         {
-            m_thread->join();
+            mThread->join();
             return true;
         }
         else
         {
-            std::unique_lock<std::mutex> lock( m_waitMutex );
-            bool completed = m_waitCv.wait_for(
-                lock, std::chrono::milliseconds( time ), [this]
+            std::unique_lock<std::mutex> lock( mWaitMutex );
+            bool completed = mWaitCv.wait_for(
+                lock, std::chrono::milliseconds( aTime ), [this]
                 {
-                    return m_finished.load();
+                    return mFinished.load();
                 } );
-            if( completed && m_thread->joinable() )
+            if( completed && mThread->joinable() )
             {
-                m_thread->join();
+                mThread->join();
             }
             return completed;
         }
@@ -289,13 +290,13 @@ namespace QtLikeSignal
     //! Checks if the thread is currently running. Thread-safe.
     bool GThread::isRunning() const
     {
-        return m_running.load();
+        return mRunning.load();
     }
 
     //! Checks if the thread has finished execution. Thread-safe.
     bool GThread::isFinished() const
     {
-        return m_finished.load();
+        return mFinished.load();
     }
 
     //! Sets the scheduling priority of this thread. Thread-safe.
@@ -313,29 +314,29 @@ namespace QtLikeSignal
     //! the privileges to select it. Qt behaves the same way. Windows applies all seven levels.
     void GThread::setPriority
         (
-        Priority priority  //!< The priority to apply. InheritPriority is not accepted; rejected with a warning.
+        Priority aPriority  //!< The priority to apply. InheritPriority is not accepted; rejected with a warning.
         )
     {
-        if( priority == InheritPriority )
+        if( aPriority == InheritPriority )
         {
             std::fprintf( stderr,
                 "GThread::setPriority: InheritPriority cannot be set, only reported\n" );
             return;
         }
 
-        std::lock_guard<std::mutex> lock( m_priorityMutex );
+        std::lock_guard<std::mutex> lock( mPriorityMutex );
 
         // Qt refuses the same way. There is no OS thread to act on yet, and quietly stashing the
         // value for a future start() would promise a thread priority this class does not deliver.
-        if( !m_running.load() || !m_thread )
+        if( !mRunning.load() || !mThread )
         {
             std::fprintf( stderr,
                 "GThread::setPriority: cannot set priority, thread is not running\n" );
             return;
         }
 
-        m_priority = priority;
-        applyPriority( priority );
+        mPriority = aPriority;
+        applyPriority( aPriority );
     }
 
     //! Gets the scheduling priority of this thread. Thread-safe. Returns the priority last set on
@@ -343,27 +344,27 @@ namespace QtLikeSignal
     //! set on this run.
     GThread::Priority GThread::priority() const
     {
-        std::lock_guard<std::mutex> lock( m_priorityMutex );
-        if( !m_running.load() )
+        std::lock_guard<std::mutex> lock( mPriorityMutex );
+        if( !mRunning.load() )
         {
             return InheritPriority;
         }
-        return m_priority;
+        return mPriority;
     }
 
     //! Pushes a priority down to the OS thread.
     //!
     //! Split out from setPriority() only so the platform code sits in one place. The caller must
-    //! hold m_priorityMutex and must already have established that the thread is running, because
-    //! this dereferences m_thread and uses its native handle.
+    //! hold mPriorityMutex and must already have established that the thread is running, because
+    //! this dereferences mThread and uses its native handle.
     void GThread::applyPriority
         (
-        Priority priority  //!< The priority to apply. Never InheritPriority.
+        Priority aPriority  //!< The priority to apply. Never InheritPriority.
         )
     {
         #if defined( _WIN32 )
             int prio;
-            switch( priority )
+            switch( aPriority )
             {
             case IdlePriority:
                 prio = THREAD_PRIORITY_IDLE;
@@ -397,12 +398,12 @@ namespace QtLikeSignal
                 return;
             }
 
-            if( !SetThreadPriority( static_cast<HANDLE>( m_thread->native_handle() ), prio ) )
+            if( !SetThreadPriority( static_cast<HANDLE>( mThread->native_handle() ), prio ) )
             {
                 std::fprintf( stderr, "GThread::setPriority: failed to set thread priority\n" );
             }
         #elif defined( G_HAS_THREAD_PRIORITY_SCHEDULING )
-            const pthread_t handle = m_thread->native_handle();
+            const pthread_t handle = mThread->native_handle();
 
             int schedPolicy = 0;
             sched_param param {};
@@ -413,7 +414,7 @@ namespace QtLikeSignal
             }
 
             int prio = 0;
-            if( !calculateUnixPriority( priority, &schedPolicy, &prio ) )
+            if( !calculateUnixPriority( aPriority, &schedPolicy, &prio ) )
             {
                 std::fprintf( stderr,
                     "GThread::setPriority: cannot determine scheduler priority range\n" );
@@ -444,14 +445,14 @@ namespace QtLikeSignal
             #endif
         #else
             // No priority scheduling on this platform; the value is recorded and nothing else.
-            ( void )priority;
+            ( void )aPriority;
         #endif
     }
 
     //! Gets a pointer to the thread currently executing. Thread-safe.
     GThread* GThread::currentThread()
     {
-        return s_currentThread;
+        return sCurrentThread;
     }
 
     //! Gets the event dispatcher for this thread. Thread-safe.
@@ -466,7 +467,7 @@ namespace QtLikeSignal
     //! start().
     std::shared_ptr<GAbstractEventDispatcher> GThread::eventDispatcher() const
     {
-        return m_data->dispatcher();
+        return mData->dispatcher();
     }
 
     //! Queues an arbitrary task to run on this thread's event loop.
@@ -481,16 +482,16 @@ namespace QtLikeSignal
     //! fully finished and released it), in which case the task is dropped rather than run.
     bool GThread::post
         (
-        std::function<void()> task  //!< The callable to run on this thread. Ignored (returns false) if empty.
+        std::function<void()> aTask  //!< The callable to run on this thread. Ignored (returns false) if empty.
         )
     {
-        if( !task )
+        if( !aTask )
         {
             return false;
         }
         // Explicit QueuedConnection (not Auto): post() must always defer, even when called from this
         // thread itself -- Auto would resolve to a same-thread call and run inline instead.
-        return dispatchMetaCall( this, std::move( task ), G::QueuedConnection );
+        return dispatchMetaCall( this, std::move( aTask ), G::QueuedConnection );
     }
 
     //! Starting point for thread execution. Can be overridden. Default calls exec().
@@ -504,12 +505,12 @@ namespace QtLikeSignal
     {
         // Re-fetched each iteration, and held as a strong reference across processEvents() so the
         // dispatcher cannot be destroyed mid-call.
-        auto dispatcher = m_data->dispatcher();
-        while( !m_exiting.load() && dispatcher )
+        auto dispatcher = mData->dispatcher();
+        while( !mExiting.load() && dispatcher )
         {
             dispatcher->processEvents();
-            dispatcher = m_data->dispatcher();
+            dispatcher = mData->dispatcher();
         }
-        return m_exitCode.load();
+        return mExitCode.load();
     }
 }

@@ -17,8 +17,8 @@ namespace QtLikeSignal
     public:
         GCoreApplication
             (
-            int& argc,
-            char** argv
+            int& aArgc,
+            char** aArgv
             );
 
         virtual ~GCoreApplication();
@@ -30,13 +30,13 @@ namespace QtLikeSignal
         void quit();
 
     private:
-        static GCoreApplication* s_instance;  //!< The process-wide application instance.
+        static GCoreApplication* sInstance;  //!< The process-wide application instance.
 
-        std::unique_ptr<GThread>                  m_mainThread;  //!< The application's main thread.
+        std::unique_ptr<GThread>                  mMainThread;  //!< The application's main thread.
         // shared_ptr rather than unique_ptr: GThreadData hands out strong references, so a dispatcher
         // cannot be destroyed while another thread is part-way through a call into it.
-        std::shared_ptr<GAbstractEventDispatcher> m_dispatcher;  //!< The main thread's event dispatcher.
-        std::atomic<bool>                         m_exiting { false };  //!< Set by quit() to stop exec()'s loop.
+        std::shared_ptr<GAbstractEventDispatcher> mDispatcher;  //!< The main thread's event dispatcher.
+        std::atomic<bool>                         mExiting { false };  //!< Set by quit() to stop exec()'s loop.
     };
 }
 

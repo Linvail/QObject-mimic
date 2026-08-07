@@ -29,11 +29,11 @@ public:
     //! on the dispatcher as well is what makes that window impossible to land in.
     bool waitUntilRunning
         (
-        int timeoutMs = 5000  //!< How long to wait before giving up.
+        int aTimeoutMs = 5000  //!< How long to wait before giving up.
         )
     {
         const auto deadline = std::chrono::steady_clock::now()
-            + std::chrono::milliseconds( timeoutMs );
+            + std::chrono::milliseconds( aTimeoutMs );
         while( std::chrono::steady_clock::now() < deadline )
         {
             if( isRunning() && eventDispatcher() )
@@ -190,12 +190,12 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
     class SamplingThread : public GThread
     {
     public:
-        std::atomic<int> sampled { -1 };
+        std::atomic<int> mSampled { -1 };
 
     protected:
         virtual void run() override
         {
-            sampled.store( static_cast<int>( priority() ) );
+            mSampled.store( static_cast<int>( priority() ) );
             GThread::run();
         }
 
@@ -207,12 +207,12 @@ TEST( GThreadPriority, PriorityIsInEffectBeforeRunBegins )
 
     // Give run() a chance to record the value, then stop the loop.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 5 );
-    while( thread.sampled.load() == -1 && std::chrono::steady_clock::now() < deadline )
+    while( thread.mSampled.load() == -1 && std::chrono::steady_clock::now() < deadline )
     {
         std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
     }
 
-    EXPECT_EQ( thread.sampled.load(), static_cast<int>( GThread::HighestPriority ) )
+    EXPECT_EQ( thread.mSampled.load(), static_cast<int>( GThread::HighestPriority ) )
         << "run() started before the requested priority was in effect";
 
     thread.quit();
@@ -241,7 +241,7 @@ TEST( GThreadPriority, RestartWithoutPriorityClearsPrevious )
 //!
 //! The interesting window is between the run body finishing and the OS thread being joined. This
 //! hammers setPriority() from another thread while the target quits underneath it, which is the
-//! case m_priorityMutex exists to make safe. Under a sanitizer build this is the test that would
+//! case mPriorityMutex exists to make safe. Under a sanitizer build this is the test that would
 //! catch a use-after-exit on the native handle.
 TEST( GThreadPriority, SetPriorityRacingThreadExitIsSafe )
 {
@@ -316,8 +316,8 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
     {
         struct Expectation
         {
-            GThread::Priority priority;
-            int nativePriority;
+            GThread::Priority mPriority;
+            int mNativePriority;
         };
 
         const Expectation expectations[] =
@@ -337,8 +337,8 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
 
         for( const Expectation& expectation : expectations )
         {
-            thread.setPriority( expectation.priority );
-            ASSERT_EQ( thread.priority(), expectation.priority );
+            thread.setPriority( expectation.mPriority );
+            ASSERT_EQ( thread.priority(), expectation.mPriority );
 
             // Ask the thread what the OS thinks its own priority is. Reading it from here would need
             // the native handle, which is private; posting the query onto the thread itself gets the
@@ -353,7 +353,7 @@ TEST( GThreadPriority, ConcurrentSettersAreSerialised )
             ASSERT_EQ( answer.wait_for( std::chrono::seconds( 5 ) ), std::future_status::ready )
                 << "the thread never ran the posted query";
 
-            EXPECT_EQ( answer.get(), expectation.nativePriority )
+            EXPECT_EQ( answer.get(), expectation.mNativePriority )
                 << "setPriority() did not reach the OS thread";
         }
 

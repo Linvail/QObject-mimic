@@ -24,7 +24,7 @@ namespace QtLikeSignal
 
         void setInterval
             (
-            int msec
+            int aMsec
             );
 
         bool isActive() const;
@@ -33,7 +33,7 @@ namespace QtLikeSignal
 
         void setSingleShot
             (
-            bool singleShot
+            bool aSingleShot
             );
 
         int timerId() const;
@@ -47,7 +47,7 @@ namespace QtLikeSignal
         //! `GObject::callLater(&timer, &GTimer::start, 50)`.
         void start
             (
-            int msec  //!< Interval in milliseconds.
+            int aMsec  //!< Interval in milliseconds.
             );
 
         void start();
@@ -60,8 +60,8 @@ namespace QtLikeSignal
         //! callable slot type.
         template <typename Functor> static void singleShot
             (
-            int msec,
-            Functor functor
+            int aMsec,
+            Functor aFunctor
             );
 
         //! Fires a single-shot timer executing a functor in context object's thread. Functor is
@@ -69,9 +69,9 @@ namespace QtLikeSignal
         template <typename Functor>
         static void singleShot
             (
-            int msec,
-            const GObject* context,
-            Functor functor
+            int aMsec,
+            const GObject* aContext,
+            Functor aFunctor
             );
 
         //! Fires a single-shot timer executing a member function on receiver object. Receiver is
@@ -79,15 +79,15 @@ namespace QtLikeSignal
         template <typename Receiver, typename MemberFunc>
         static void singleShot
             (
-            int msec,
-            const Receiver* receiver,
-            MemberFunc method
+            int aMsec,
+            const Receiver* aReceiver,
+            MemberFunc aMethod
             );
 
     protected:
         virtual void timerEvent
             (
-            GTimerEvent* event
+            GTimerEvent* aEvent
             ) override;
 
     private:
@@ -96,17 +96,17 @@ namespace QtLikeSignal
         // thread-confined because they go through GObject::startTimer()/killTimer(), and timerEvent()
         // is delivered by that same thread's event loop. Adding a mutex would only paper over misuse
         // that the thread-confinement rules already forbid.
-        int m_interval { 0 };        //!< The configured interval, in milliseconds.
-        int m_timerId { -1 };        //!< The underlying GObject timer id, or -1 if inactive.
-        bool m_singleShot { false }; //!< True if the timer stops itself after firing once.
-        bool m_active { false };     //!< True while the timer is running.
+        int mInterval { 0 };        //!< The configured interval, in milliseconds.
+        int mTimerId { -1 };        //!< The underlying GObject timer id, or -1 if inactive.
+        bool mSingleShot { false }; //!< True if the timer stops itself after firing once.
+        bool mActive { false };     //!< True while the timer is running.
     };
 
     //! Fires a single-shot timer executing a functor after specified delay.
     template <typename Functor> void GTimer::singleShot
         (
-        int msec,        //!< Delay in milliseconds.
-        Functor functor  //!< Slot function to execute.
+        int aMsec,        //!< Delay in milliseconds.
+        Functor aFunctor  //!< Slot function to execute.
         )
     {
         //! Self-deleting helper that fires functor once when its timer expires.
@@ -115,23 +115,23 @@ namespace QtLikeSignal
         public:
             GSingleShotHelper
                 (
-                int ms,
-                Functor fn
+                int aMs,
+                Functor aFn
                 )
-                : m_fn( std::move( fn ) )
+                : mFn( std::move( aFn ) )
             {
-                m_id = startTimer( ms );
+                mId = startTimer( aMs );
             }
 
         protected:
             virtual void timerEvent
                 (
-                GTimerEvent* event
+                GTimerEvent* aEvent
                 ) override
             {
-                if( event->timerId() == m_id )
+                if( aEvent->timerId() == mId )
                 {
-                    m_fn();
+                    mFn();
                     deleteLater();
                 }
             }
@@ -139,14 +139,14 @@ namespace QtLikeSignal
         public:
             int timerId() const
             {
-                return m_id;
+                return mId;
             }
 
         private:
-            Functor m_fn;
-            int m_id { -1 };
+            Functor mFn;
+            int mId { -1 };
         };
-        auto* helper = new GSingleShotHelper( msec, functor );
+        auto* helper = new GSingleShotHelper( aMsec, aFunctor );
         if( helper->timerId() == -1 )
         {
             delete helper;
@@ -157,12 +157,12 @@ namespace QtLikeSignal
     template <typename Functor>
     void GTimer::singleShot
         (
-        int msec,                  //!< Delay in milliseconds.
-        const GObject* context,    //!< Target context GObject.
-        Functor functor            //!< Slot function to execute.
+        int aMsec,                  //!< Delay in milliseconds.
+        const GObject* aContext,    //!< Target context GObject.
+        Functor aFunctor            //!< Slot function to execute.
         )
     {
-        if( !context )
+        if( !aContext )
         {
             return;
         }
@@ -172,11 +172,11 @@ namespace QtLikeSignal
         public:
             GSingleShotContextHelper
                 (
-                int ms,
-                Functor fn
+                int aMs,
+                Functor aFn
                 )
-                : m_fn( std::move( fn ) )
-                , m_interval( ms )
+                : mFn( std::move( aFn ) )
+                , mInterval( aMs )
             {
             }
 
@@ -185,8 +185,8 @@ namespace QtLikeSignal
             //! Public only so callLater() can target it; it is not part of any API.
             void arm()
             {
-                m_id = startTimer( m_interval );
-                if( m_id == -1 )
+                mId = startTimer( mInterval );
+                if( mId == -1 )
                 {
                     // Nothing will ever fire, so reclaim the helper rather than leaking it.
                     delete this;
@@ -196,24 +196,24 @@ namespace QtLikeSignal
         protected:
             virtual void timerEvent
                 (
-                GTimerEvent* event
+                GTimerEvent* aEvent
                 ) override
             {
-                if( event->timerId() == m_id )
+                if( aEvent->timerId() == mId )
                 {
-                    m_fn();
+                    mFn();
                     deleteLater();
                 }
             }
 
         private:
-            Functor m_fn;
-            int m_interval { 0 };
-            int m_id { -1 };
+            Functor mFn;
+            int mInterval { 0 };
+            int mId { -1 };
         };
 
-        auto*    helper = new GSingleShotContextHelper( msec, functor );
-        GObject* ctx    = const_cast<GObject*>( context );
+        auto*    helper = new GSingleShotContextHelper( aMsec, aFunctor );
+        GObject* ctx    = const_cast<GObject*>( aContext );
 
         // startTimer() is thread-confined, so the timer has to be registered on the thread that will
         // deliver its events -- not on whichever thread happens to call singleShot(). This mirrors
@@ -237,20 +237,20 @@ namespace QtLikeSignal
     template <typename Receiver, typename MemberFunc>
     void GTimer::singleShot
         (
-        int msec,                    //!< Delay in milliseconds.
-        const Receiver* receiver,    //!< Target receiver object.
-        MemberFunc method            //!< Member function pointer to execute.
+        int aMsec,                    //!< Delay in milliseconds.
+        const Receiver* aReceiver,    //!< Target receiver object.
+        MemberFunc aMethod            //!< Member function pointer to execute.
         )
     {
-        if( !receiver )
+        if( !aReceiver )
         {
             return;
         }
-        auto bound = [receiver, method]()
+        auto bound = [aReceiver, aMethod]()
             {
-                ( const_cast<Receiver*>( receiver )->*method )();
+                ( const_cast<Receiver*>( aReceiver )->*aMethod )();
             };
-        singleShot( msec, static_cast<const GObject*>( receiver ), bound );
+        singleShot( aMsec, static_cast<const GObject*>( aReceiver ), bound );
     }
 }
 

@@ -22,8 +22,8 @@ namespace QtLikeSignal
         //! A timer registration, as handed between dispatchers when an object changes thread.
         struct TimerRegistration
         {
-            int timerId;     //!< The timer's unique id, preserved across the move.
-            int intervalMs;  //!< The interval the timer was registered with, in milliseconds.
+            int mTimerId;     //!< The timer's unique id, preserved across the move.
+            int mIntervalMs;  //!< The interval the timer was registered with, in milliseconds.
         };
         //! Constructs an event dispatcher.
         GAbstractEventDispatcher();
@@ -67,28 +67,28 @@ namespace QtLikeSignal
         //! Registers a timer for the given object. Thread-safe.
         virtual void registerTimer
             (
-            int timerId,       //!< Unique timer identifier.
-            int interval,      //!< Interval in milliseconds.
-            GObject* object    //!< Target object to receive GTimerEvent.
+            int aTimerId,       //!< Unique timer identifier.
+            int aInterval,      //!< Interval in milliseconds.
+            GObject* aObject    //!< Target object to receive GTimerEvent.
             ) = 0;
 
         //! Unregisters a timer by ID. Returns true if the timer was found and removed. Thread-safe.
         virtual bool unregisterTimer
             (
-            int timerId  //!< Unique timer identifier.
+            int aTimerId  //!< Unique timer identifier.
             ) = 0;
 
         //! Thread-safely posts an event to the dispatcher's queue.
         virtual void postEvent
             (
-            GObject* receiver,  //!< The object that will receive the event.
-            GEvent* event       //!< The event to be processed.
+            GObject* aReceiver,  //!< The object that will receive the event.
+            GEvent* aEvent       //!< The event to be processed.
             ) = 0;
 
         //! Removes and deletes all pending events for the specified receiver. Thread-safe.
         virtual void removeEventsForReceiver
             (
-            GObject* receiver  //!< The receiver whose events should be removed.
+            GObject* aReceiver  //!< The receiver whose events should be removed.
             ) = 0;
 
         //! Unregisters the receiver's timers and returns them so they can be re-registered.
@@ -100,7 +100,7 @@ namespace QtLikeSignal
         //! the removed registrations, empty if the receiver had none. Thread-safe.
         virtual std::vector<TimerRegistration> takeTimersForReceiver
             (
-            GObject* receiver  //!< The receiver whose timers should be taken.
+            GObject* aReceiver  //!< The receiver whose timers should be taken.
             ) = 0;
 
         friend class GObject;

@@ -28,7 +28,7 @@ namespace QtLikeSignal
         //! Gets the type of the event. Thread-safe.
         Type type() const
         {
-            return m_type;
+            return mType;
         }
 
     protected:
@@ -37,14 +37,14 @@ namespace QtLikeSignal
         //! Protected: GEvent is only ever instantiated through one of the concrete subclasses below.
         GEvent
             (
-            Type type  //!< The type of the event.
+            Type aType  //!< The type of the event.
             )
-            : m_type( type )
+            : mType( aType )
         {
         }
 
     private:
-        Type m_type;
+        Type mType;
     };
 
     //! An event that encapsulates a function call across threads.
@@ -57,23 +57,23 @@ namespace QtLikeSignal
         //! Constructs a metacall event with the given callback.
         GMetaCallEvent
             (
-            std::function<void()> callback  //!< The function to execute.
+            std::function<void()> aCallback  //!< The function to execute.
             )
             : GEvent( MetaCall )
-            , m_callback( std::move( callback ) )
+            , mCallback( std::move( aCallback ) )
         {
         }
 
         //! Executes the stored function call.
         void placeMetaCall() const
         {
-            if( m_callback )
+            if( mCallback )
             {
-                m_callback();
+                mCallback();
             }
         }
 
-        std::function<void()> m_callback;
+        std::function<void()> mCallback;
 
         friend class GObject;
     };
@@ -89,21 +89,21 @@ namespace QtLikeSignal
         //! Constructing one grants no privileged capability -- it cannot be posted to any queue.
         GTimerEvent
             (
-            int timerId  //!< The unique identifier of the expired timer.
+            int aTimerId  //!< The unique identifier of the expired timer.
             )
             : GEvent( Timer )
-            , m_timerId( timerId )
+            , mTimerId( aTimerId )
         {
         }
 
         //! Gets the timer ID associated with this event. Thread-safe.
         int timerId() const
         {
-            return m_timerId;
+            return mTimerId;
         }
 
     private:
-        int m_timerId;
+        int mTimerId;
     };
 
     //! Event sent to delete an object asynchronously.
