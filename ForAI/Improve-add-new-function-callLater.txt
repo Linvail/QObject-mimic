@@ -16,7 +16,7 @@ This is where the function really shines. If Qt.callLater(myFunction) is trigger
 ////////////////////////////////////////////////////////
 
 Now, our goal is to add this function to our GObject class, with similar functionality.
-In my imagnation, it should be a static function and being used like this:
+In my imagination, it should be a static function and being used like this:
 
 GObject::callLater(  context or GObject pointer, a function or a signal, args... );
 

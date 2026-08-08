@@ -3,8 +3,9 @@
 * This mission has the following stages.
 1. Support cross-thread queued signal/slot connection, e.g. QObject::connect, disconnect, etc.
 We need to support very flexible connect(), i.e. the connect function templates must resolve many use cases.
-For example, connect to parent class's method, connect to overloaded method, connect to a method that returns non-void type,
-connect to a method that take const reference type argument while the signal takes raw type, and connect to lambda, basic function, and functor.
+For example, connect to parent class's method, connect to overloaded method, connect to a method that returns non-void
+type, connect to a method that take const reference type argument while the signal takes raw type, and connect to lambda,
+basic function, and functor.
 I suppose that we at least need to mimic QObject, QThread.
 
 2. Support deleteLater as Qt.
@@ -15,8 +16,8 @@ I suppose that we at least need to mimic QObject, QThread.
 
 4.5 Support setter/getter of priority of Thread on Windows and UNIX (pthread-backend).
 
-5. Support QAbstractEventDispatcher, and concrete dispatcher for Windows and Linux. I want to receive OS/platform's messages.
-100% cpu-spin is not allowed.
+5. Support QAbstractEventDispatcher, and concrete dispatcher for Windows and Linux. I want to receive OS/platform's
+messages. 100% cpu-spin is not allowed.
 
 6. Support QObject::installEventFilter, QObject::removeEventFilter().
 
@@ -24,9 +25,11 @@ I suppose that we at least need to mimic QObject, QThread.
 
 * General guides:
 1. Qt6.11 qtbase source is at H:\Projects-2026\qtbase-everywhere-src-6.11.1
+(/mnt/h/Projects-2026/qtbase-everywhere-src-6.11.1 in WSL)
 You can read it and try to learn from it.
 
-2. I use Waf build system and C++17. You must avoid using C++20 unless it's very helpful. Warn me before using any C++20 features.
+2. I use Waf build system and C++17. You must avoid using C++20 unless it's very helpful.
+Warn me before using any C++20 features.
 This library is meant to be cross-platform. Do not use compiler-specific preprocessor, e.g. #pragma once
 Do not rely on compiler-specific tolerance, i.e. MSVC accept a thing but clang does not, do not use that thing.
 
@@ -38,7 +41,7 @@ Therefore, we shouldn't mimic this function.
 On Windows:
 waf install --project=Tests
 On WSL2:
-wsl python3 waf install --project=Tests
+wsl ./waf install --project=Tests
 
 5. I value stability more than feature richness.
 
