@@ -17,4 +17,4 @@ Rule: Comment: Explain more for template because template is usually harder to u
 Rule: Naming: Parameter should start with `a` (aNewValue), class data member should starts with `m` (mName). As for function, variable, use camelCase (int getId(), bool isChecked;).
 Rule: Naming: Class/namespace name must start with a capital letter (MyWorker).
 Rule: Casting: Do not use C style cast.
-
+Rule: File structure: One header should have only one public class/struct type.
